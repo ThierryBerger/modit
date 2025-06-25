@@ -1,84 +1,171 @@
-use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
-use std::thread::sleep;
-use std::time::{Duration, Instant};
+//! BLE Example
+//!
+//! - starts Bluetooth advertising
+//! - offers one service with three characteristics (one is read/write, one is write only, one is read/write/notify)
+//! - pressing the boot-button on a dev-board will send a notification if it is subscribed
 
-use anyhow::Result;
-use dotenvy_macro::dotenv;
-use esp_idf_hal::gpio::*;
-use esp_idf_hal::interrupt;
-use esp_idf_hal::peripherals::Peripherals;
-use esp_idf_svc::ble::*;
-use esp_idf_sys as _;
-use log::*;
+//% FEATURES: esp-wifi esp-wifi/ble esp-hal/unstable
+//% CHIPS: esp32 esp32s3 esp32c2 esp32c3 esp32c6 esp32h2
 
-// Track how many pulses happened
-static PULSE_COUNT: AtomicU8 = AtomicU8::new(0);
+#![no_std]
+#![no_main]
 
-// Track last pulse timestamp (ms since boot)
-static LAST_PULSE_MS: AtomicU64 = AtomicU64::new(0);
+use bleps::{
+    ad_structure::{
+        create_advertising_data, AdStructure, BR_EDR_NOT_SUPPORTED, LE_GENERAL_DISCOVERABLE,
+    },
+    attribute_server::{AttributeServer, NotificationData, WorkResult},
+    gatt, Ble, HciConnector,
+};
+use esp_alloc as _;
+use esp_backtrace as _;
+use esp_hal::{
+    clock::CpuClock,
+    gpio::{Input, InputConfig, Pull},
+    main,
+    rng::Rng,
+    time,
+    timer::timg::TimerGroup,
+};
+use esp_println::println;
+use esp_wifi::{ble::controller::BleConnector, init};
 
-fn setup_interrupt(pin: Gpio4) -> Result<PinDriver<'static, Gpio4, Input>> {
-    let mut driver = PinDriver::input(pin)?;
-    driver.set_pull(Pull::Up)?;
-    driver.set_interrupt_type(InterruptType::NegEdge)?;
+esp_bootloader_esp_idf::esp_app_desc!();
 
-    interrupt::subscribe(
-        move || {
-            let now = esp_idf_hal::sys::esp_timer_get_time() / 1000; // ms since boot
-
-            let last = LAST_PULSE_MS.load(Ordering::Relaxed);
-            if now - last > 100 {
-                PULSE_COUNT.fetch_add(1, Ordering::SeqCst);
-                LAST_PULSE_MS.store(now, Ordering::Relaxed);
-            }
-        },
-        driver.pin(),
-    )?;
-
-    Ok(driver)
+#[panic_handler]
+fn panic(_info: &core::panic::PanicInfo) -> ! {
+    loop {}
 }
 
-fn main() {
-    esp_idf_svc::log::EspLogger::initialize_default();
+#[main]
+fn main() -> ! {
+    esp_println::logger::init_logger_from_env();
+    let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
+    let peripherals = esp_hal::init(config);
 
-    let peripherals = Peripherals::take()?;
-    let _coin_pin = setup_interrupt(peripherals.pins.gpio4)?; // keep alive
+    esp_alloc::heap_allocator!(size: 72 * 1024);
 
-    let ble = BlePeripheral::new("CoinModule")?;
-    let mut service = ble.add_service(uuid128!(dotenv!("COIN_SERVICE_ID")))?;
-    let mut charac =
-        service.add_notify_characteristic(uuid128!(dotenv!("COIN_CHARACTERISTIC_ID")))?;
-    ble.start_advertising()?;
-    info!("CoinModule with interrupts is advertising");
+    let timg0 = TimerGroup::new(peripherals.TIMG0);
 
+    let esp_wifi_ctrl = init(
+        timg0.timer0,
+        Rng::new(peripherals.RNG),
+        peripherals.RADIO_CLK,
+    )
+    .unwrap();
+
+    let config = InputConfig::default().with_pull(Pull::Down);
+    let button = Input::new(peripherals.GPIO0, config);
+
+    let mut debounce_cnt = 500;
+
+    let mut bluetooth = peripherals.BT;
+
+    let now = || time::Instant::now().duration_since_epoch().as_millis();
     loop {
-        let count = PULSE_COUNT.load(Ordering::SeqCst);
-        let last_pulse_ms = LAST_PULSE_MS.load(Ordering::Relaxed);
-        let now = esp_idf_hal::sys::esp_timer_get_time() / 1000;
+        let connector = BleConnector::new(&esp_wifi_ctrl, bluetooth.reborrow());
+        let hci = HciConnector::new(connector, now);
+        let mut ble = Ble::new(&hci);
 
-        if count > 0 && now - last_pulse_ms > 1000 {
-            // Timeout passed → interpret coin
-            let value = match count {
-                1 => 10,
-                2 => 20,
-                3 => 50,
-                4 => 100,
-                5 => 200,
-                _ => {
-                    warn!("Unknown pulse count: {}", count);
-                    0
+        println!("{:?}", ble.init());
+        println!("{:?}", ble.cmd_set_le_advertising_parameters());
+        println!(
+            "{:?}",
+            ble.cmd_set_le_advertising_data(
+                create_advertising_data(&[
+                    AdStructure::Flags(LE_GENERAL_DISCOVERABLE | BR_EDR_NOT_SUPPORTED),
+                    AdStructure::ServiceUuids16(&[Uuid::Uuid16(0x1809)]),
+                    AdStructure::CompleteLocalName(esp_hal::chip!()),
+                ])
+                .unwrap()
+            )
+        );
+        println!("{:?}", ble.cmd_set_le_advertise_enable(true));
+
+        println!("started advertising");
+
+        let mut rf = |_offset: usize, data: &mut [u8]| {
+            data[..20].copy_from_slice(&b"Hello Bare-Metal BLE"[..]);
+            17
+        };
+        let mut wf = |offset: usize, data: &[u8]| {
+            println!("RECEIVED: {} {:?}", offset, data);
+        };
+
+        let mut wf2 = |offset: usize, data: &[u8]| {
+            println!("RECEIVED: {} {:?}", offset, data);
+        };
+
+        let mut rf3 = |_offset: usize, data: &mut [u8]| {
+            data[..5].copy_from_slice(&b"Hola!"[..]);
+            5
+        };
+        let mut wf3 = |offset: usize, data: &[u8]| {
+            println!("RECEIVED: Offset {}, data {:?}", offset, data);
+        };
+
+        gatt!([service {
+            uuid: "937312e0-2354-11eb-9f10-fbc30a62cf38",
+            characteristics: [
+                characteristic {
+                    uuid: "937312e0-2354-11eb-9f10-fbc30a62cf38",
+                    read: rf,
+                    write: wf,
+                },
+                characteristic {
+                    uuid: "957312e0-2354-11eb-9f10-fbc30a62cf38",
+                    write: wf2,
+                },
+                characteristic {
+                    name: "my_characteristic",
+                    uuid: "987312e0-2354-11eb-9f10-fbc30a62cf38",
+                    notify: true,
+                    read: rf3,
+                    write: wf3,
+                },
+            ],
+        },]);
+
+        let mut rng = bleps::no_rng::NoRng;
+        let mut srv = AttributeServer::new(&mut ble, &mut gatt_attributes, &mut rng);
+
+        loop {
+            let mut notification = None;
+
+            if button.is_low() && debounce_cnt > 0 {
+                debounce_cnt -= 1;
+                if debounce_cnt == 0 {
+                    let mut cccd = [0u8; 1];
+                    if let Some(1) = srv.get_characteristic_value(
+                        my_characteristic_notify_enable_handle,
+                        0,
+                        &mut cccd,
+                    ) {
+                        // if notifications enabled
+                        if cccd[0] == 1 {
+                            notification = Some(NotificationData::new(
+                                my_characteristic_handle,
+                                &b"Notification"[..],
+                            ));
+                        }
+                    }
                 }
             };
 
-            if value > 0 {
-                let msg = format!("COIN:{}", value);
-                charac.notify(msg.as_bytes())?;
-                info!("Sent BLE: {}", msg);
+            if button.is_high() {
+                debounce_cnt = 500;
             }
 
-            PULSE_COUNT.store(0, Ordering::SeqCst);
+            match srv.do_work_with_notification(notification) {
+                Ok(res) => {
+                    if let WorkResult::GotDisconnected = res {
+                        break;
+                    }
+                }
+                Err(err) => {
+                    println!("{:?}", err);
+                }
+            }
         }
-
-        sleep(Duration::from_millis(50));
     }
 }
