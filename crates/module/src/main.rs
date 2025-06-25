@@ -57,8 +57,6 @@ fn main() -> ! {
     let config = InputConfig::default().with_pull(Pull::Down);
     let button = Input::new(peripherals.GPIO0, config);
 
-    let mut debounce_cnt = 500;
-
     let mut bluetooth = peripherals.BT;
 
     let now = || time::Instant::now().duration_since_epoch().as_millis();
@@ -128,13 +126,15 @@ fn main() -> ! {
 
         let mut rng = bleps::no_rng::NoRng;
         let mut srv = AttributeServer::new(&mut ble, &mut gatt_attributes, &mut rng);
-
+        let mut tick: u128 = 0;
+        let mut button_last_pushed_tick = 0;
         loop {
+            tick += 1;
             let mut notification = None;
 
-            if button.is_low() && debounce_cnt > 0 {
-                debounce_cnt -= 1;
-                if debounce_cnt == 0 {
+            if button.is_low() {
+                if tick.saturating_sub(button_last_pushed_tick) > 3 {
+                    println!("sending notif?");
                     let mut cccd = [0u8; 1];
                     if let Some(1) = srv.get_characteristic_value(
                         my_characteristic_notify_enable_handle,
@@ -143,6 +143,7 @@ fn main() -> ! {
                     ) {
                         // if notifications enabled
                         if cccd[0] == 1 {
+                            println!("sending notif!");
                             notification = Some(NotificationData::new(
                                 my_characteristic_handle,
                                 &b"Notification"[..],
@@ -150,11 +151,8 @@ fn main() -> ! {
                         }
                     }
                 }
+                button_last_pushed_tick = tick;
             };
-
-            if button.is_high() {
-                debounce_cnt = 500;
-            }
 
             match srv.do_work_with_notification(notification) {
                 Ok(res) => {
