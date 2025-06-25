@@ -11,3 +11,5 @@ btleplug = "0.11.8"
 anyhow = "1.0.98"
 futures = "0.3.31"
 pretty_env_logger = "0.5.0"
+shared = { path = "../shared" }
+ron = "0.10"

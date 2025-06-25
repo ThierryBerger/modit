@@ -6,12 +6,12 @@ use btleplug::api::{Central, Characteristic, Manager as _, Peripheral as _, Writ
 use btleplug::platform::{Adapter, Manager, Peripheral};
 use uuid::Uuid;
 
-pub struct BleMotorController {
+pub struct BleWritableClient {
     motor: Peripheral,
     motor_char: Characteristic,
 }
 
-impl BleMotorController {
+impl BleWritableClient {
     pub async fn new(adapter: &Adapter, motor_name: &str, uuid: Uuid) -> Self {
         let peripherals = adapter.peripherals().await.unwrap();
         todo!();
@@ -38,9 +38,8 @@ impl BleMotorController {
 }
 
 #[async_trait]
-impl MotorController for BleMotorController {
-    async fn spin(&mut self, duration: Duration) {
-        let msg = format!("SPIN:{}", duration.as_millis());
+impl WritableClient for BleWritableClient {
+    async fn write(&mut self, message: &str) {
         self.motor
             .write(&self.motor_char, msg.as_bytes(), WriteType::WithoutResponse)
             .await

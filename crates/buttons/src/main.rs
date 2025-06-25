@@ -10,6 +10,9 @@
 #![no_std]
 #![no_main]
 
+#[macro_use]
+extern crate alloc;
+
 use bleps::{
     ad_structure::{
         create_advertising_data, AdStructure, BR_EDR_NOT_SUPPORTED, LE_GENERAL_DISCOVERABLE,
@@ -40,7 +43,7 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
 #[main]
 fn main() -> ! {
     esp_println::logger::init_logger_from_env();
-    let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
+    let config = esp_hal::Config::default().with_cpu_clock(CpuClock::_80MHz);
     let peripherals = esp_hal::init(config);
 
     esp_alloc::heap_allocator!(size: 72 * 1024);
@@ -82,44 +85,30 @@ fn main() -> ! {
 
         println!("started advertising");
 
-        let mut rf = |_offset: usize, data: &mut [u8]| {
-            data[..20].copy_from_slice(&b"Hello Bare-Metal BLE"[..]);
-            17
-        };
-        let mut wf = |offset: usize, data: &[u8]| {
-            println!("RECEIVED: {} {:?}", offset, data);
-        };
-
         let mut wf2 = |offset: usize, data: &[u8]| {
             println!("RECEIVED: {} {:?}", offset, data);
         };
 
         let mut rf3 = |_offset: usize, data: &mut [u8]| {
-            data[..5].copy_from_slice(&b"Hola!"[..]);
-            5
-        };
-        let mut wf3 = |offset: usize, data: &[u8]| {
-            println!("RECEIVED: Offset {}, data {:?}", offset, data);
+            let to_send = format!("COIN:{}", 20);
+            let bytes = to_send.as_bytes();
+            let len = bytes.len();
+            data[..len].copy_from_slice(bytes);
+            len
         };
 
         gatt!([service {
             uuid: "937312e0-2354-11eb-9f10-fbc30a62cf38",
             characteristics: [
                 characteristic {
-                    uuid: "937312e0-2354-11eb-9f10-fbc30a62cf38",
-                    read: rf,
-                    write: wf,
-                },
-                characteristic {
                     uuid: "957312e0-2354-11eb-9f10-fbc30a62cf38",
                     write: wf2,
                 },
                 characteristic {
-                    name: "my_characteristic",
+                    name: "button_charac",
                     uuid: "987312e0-2354-11eb-9f10-fbc30a62cf38",
                     notify: true,
                     read: rf3,
-                    write: wf3,
                 },
             ],
         },]);
@@ -137,7 +126,7 @@ fn main() -> ! {
                     println!("sending notif?");
                     let mut cccd = [0u8; 1];
                     if let Some(1) = srv.get_characteristic_value(
-                        my_characteristic_notify_enable_handle,
+                        button_charac_notify_enable_handle,
                         0,
                         &mut cccd,
                     ) {
@@ -145,7 +134,7 @@ fn main() -> ! {
                         if cccd[0] == 1 {
                             println!("sending notif!");
                             notification = Some(NotificationData::new(
-                                my_characteristic_handle,
+                                button_charac_handle,
                                 &b"Notification"[..],
                             ));
                         }

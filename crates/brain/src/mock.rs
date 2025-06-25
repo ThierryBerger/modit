@@ -7,23 +7,23 @@ use std::{
     time::Duration,
 };
 
-pub struct MockCoinInput {
+pub struct MockNotifierClient {
     pub mocked: Pin<Box<dyn Fn() -> Option<u32> + Send>>,
 }
 
 #[async_trait]
-impl CoinReceiver for MockCoinInput {
-    async fn read_coin(&mut self) -> Option<u32> {
+impl NotifierClient for MockNotifierClient {
+    async fn read(&mut self) -> Option<u32> {
         (self.mocked)()
     }
 }
 
-pub struct MockMotorOutput {
+pub struct MockWritableClient {
     pub mocked: Box<dyn Fn() + Send>,
 }
 
 #[async_trait]
-impl MotorController for MockMotorOutput {
+impl WritableClient for MockWritableClient {
     async fn spin(&mut self, duration: Duration) {
         println!("Mock spin: {} seconds", duration.as_secs_f32());
         (self.mocked)()
