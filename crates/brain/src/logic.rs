@@ -1,16 +1,6 @@
 use async_trait::async_trait;
 use std::time::Duration;
 
-#[async_trait]
-pub trait NotifierClient {
-    async fn read(&mut self) -> Option<u32>;
-}
-
-#[async_trait]
-pub trait WritableClient {
-    async fn write(&mut self, msg: &str);
-}
-
 pub struct Brain<R, M>
 where
     R: CoinReceiver + Send,
@@ -38,7 +28,9 @@ where
                     50 => 1000,
                     _ => 500,
                 });
-                self.motor.spin(format!("SPIN:{}", duration.as_millis()).as_bytes()).await;
+                self.motor
+                    .spin(format!("SPIN:{}", duration.as_millis()).as_bytes())
+                    .await;
             }
 
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;

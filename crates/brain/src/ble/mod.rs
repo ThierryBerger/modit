@@ -1,17 +1,15 @@
 pub mod notifier;
 pub mod writable;
 
-use core::time;
 use core::time::Duration;
+use std::collections::HashMap;
 
-use crate::logic::{CoinReceiver, MotorController};
-use async_trait::async_trait;
 use btleplug::api::{
-    Central, CharPropFlags, Characteristic, Manager as _, Peripheral as _, ScanFilter, WriteType,
+    Central, CharPropFlags, Characteristic, Manager as _, Peripheral as _, ScanFilter,
 };
-use btleplug::platform::{Adapter, Manager, Peripheral};
+use btleplug::platform::{Manager, Peripheral};
 use futures::stream::StreamExt;
-use shared::Notifier;
+use shared::{Notifier, Writable};
 use uuid::Uuid;
 
 /// Only devices whose name contains this string will be tried.
@@ -19,20 +17,23 @@ const PERIPHERAL_NAME_MATCH_FILTER: &str = "Modit";
 /// UUID of the characteristic for which we should subscribe to notifications.
 const NOTIFY_CHARACTERISTIC_UUID: Uuid = Uuid::from_u128(0x00002a1900001000800000805f9b34fb); // 2ab4
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum Module {
     Notifier(Notifier),
     Writable(Writable),
 }
 
-pub async fn init_bluetooth(modules: &[Module]) -> anyhow::Result<Vec> {
+pub async fn init_bluetooth(
+    modules: &[Module],
+) -> anyhow::Result<HashMap<Module, (Peripheral, Characteristic)>> {
     let manager = Manager::new().await?;
     let adapter_list = manager.adapters().await?;
     if adapter_list.is_empty() {
         eprintln!("No Bluetooth adapters found");
     }
 
-    let mut peripherals = vec![];
+    let mut final_modules = HashMap::<Module, (Peripheral, Characteristic)>::new();
+    let mut modules_left_to_initialize = modules.clone().to_vec();
     for adapter in dbg!(adapter_list).iter() {
         println!("Starting scan...");
         adapter
@@ -41,11 +42,11 @@ pub async fn init_bluetooth(modules: &[Module]) -> anyhow::Result<Vec> {
             .expect("Can't scan BLE adapter for connected devices...");
         tokio::time::sleep(Duration::from_secs(3)).await;
         let peripherals = adapter.peripherals().await?;
-
+        // Remove modules already initialized
+        modules_left_to_initialize.retain(|module| !final_modules.keys().any(|key| key == module));
         if peripherals.is_empty() {
             eprintln!("->>> BLE peripheral devices were not found, sorry. Exiting...");
         } else {
-            let mut wanted_modules = modules.to_vec();
             // All peripheral devices in range.
             for peripheral in peripherals.iter() {
                 let properties = peripheral.properties().await?;
@@ -62,14 +63,14 @@ pub async fn init_bluetooth(modules: &[Module]) -> anyhow::Result<Vec> {
                     "Peripheral {:?} is connected: {:?}",
                     &local_name, is_connected
                 );*/
-                for module in wanted_modules.clone() {
+                for module in &modules_left_to_initialize {
                     // Check if it's the peripheral we want.
                     match module {
                         Module::Notifier(Notifier {
                             service,
                             charac_notify_id,
                         }) => {
-                            if local_name == mo {
+                            if local_name.starts_with("modit") {
                                 println!("Found matching peripheral {:?}...", &local_name);
                                 if !is_connected {
                                     println!("Trying to connect...");
@@ -96,7 +97,8 @@ pub async fn init_bluetooth(modules: &[Module]) -> anyhow::Result<Vec> {
                                         println!("Checking characteristic {:?}", characteristic);
                                         // Subscribe to notifications from the characteristic with the selected
                                         // UUID.
-                                        if characteristic.uuid == charac_notify_id
+                                        if characteristic.uuid
+                                            == Uuid::parse_str(charac_notify_id).unwrap()
                                             && characteristic
                                                 .properties
                                                 .contains(CharPropFlags::NOTIFY)
@@ -107,6 +109,11 @@ pub async fn init_bluetooth(modules: &[Module]) -> anyhow::Result<Vec> {
                                             );
                                             peripheral.subscribe(&characteristic).await?;
                                         }
+                                        final_modules.insert(
+                                            module.clone(),
+                                            (peripheral.clone(), characteristic.clone()),
+                                        );
+                                        break;
                                     }
                                 }
                                 break;
@@ -116,7 +123,7 @@ pub async fn init_bluetooth(modules: &[Module]) -> anyhow::Result<Vec> {
                         }
                         Module::Writable(Writable {
                             service,
-                            charac_notify_id,
+                            charac_write_id,
                         }) => {
                             todo!()
                         }
@@ -125,5 +132,5 @@ pub async fn init_bluetooth(modules: &[Module]) -> anyhow::Result<Vec> {
             }
         }
     }
-    Ok(())
+    Ok(final_modules)
 }

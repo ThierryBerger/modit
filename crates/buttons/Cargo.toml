@@ -9,9 +9,10 @@ test = false
 bench = false
 
 [dependencies]
+shared = { path = "../shared" }
+#ron = "0.10"
 esp-bootloader-esp-idf = "0.1.0"
 esp-hal = { version = "=1.0.0-beta.1", features = ["esp32", "unstable"] }
-
 bleps = { git = "https://github.com/bjoernQ/bleps", package = "bleps", rev = "a5148d8ae679e021b78f53fd33afb8bb35d0b62e", features = [
     "async",
     "macros",

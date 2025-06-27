@@ -17,6 +17,7 @@ use bleps::{
     ad_structure::{
         create_advertising_data, AdStructure, BR_EDR_NOT_SUPPORTED, LE_GENERAL_DISCOVERABLE,
     },
+    att::Uuid,
     attribute_server::{AttributeServer, NotificationData, WorkResult},
     gatt, Ble, HciConnector,
 };
@@ -32,6 +33,7 @@ use esp_hal::{
 };
 use esp_println::println;
 use esp_wifi::{ble::controller::BleConnector, init};
+use shared::{Notifier, Writable};
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -43,6 +45,7 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
 #[main]
 fn main() -> ! {
     esp_println::logger::init_logger_from_env();
+
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::_80MHz);
     let peripherals = esp_hal::init(config);
 
@@ -96,17 +99,18 @@ fn main() -> ! {
             data[..len].copy_from_slice(bytes);
             len
         };
-
         gatt!([service {
             uuid: "937312e0-2354-11eb-9f10-fbc30a62cf38",
             characteristics: [
                 characteristic {
-                    uuid: "957312e0-2354-11eb-9f10-fbc30a62cf38",
+                    // Hardcoded, needs to be similar to your brain's writable.
+                    uuid: "927312e0-2354-11eb-9f10-fbc30a62cf38",
                     write: wf2,
                 },
                 characteristic {
                     name: "button_charac",
-                    uuid: "987312e0-2354-11eb-9f10-fbc30a62cf38",
+                    // Hardcoded, needs to be similar to your brain's notifier.
+                    uuid: "917312e0-2354-11eb-9f10-fbc30a62cf38",
                     notify: true,
                     read: rf3,
                 },
