@@ -17,6 +17,7 @@ pub enum Module {
     Writable(Writable),
 }
 
+#[derive(Clone, Debug)]
 pub struct ModuleDetails {
     pub peripheral: Peripheral,
     pub characteristic: Characteristic,
@@ -30,7 +31,7 @@ pub async fn init_bluetooth(modules: &[Module]) -> anyhow::Result<HashMap<Module
     }
 
     let mut final_modules = HashMap::new();
-    let mut modules_left_to_initialize = modules.clone().to_vec();
+    let mut modules_left_to_initialize = modules.to_vec();
     for adapter in dbg!(adapter_list).iter() {
         println!("Starting scan...");
         adapter
@@ -101,7 +102,23 @@ pub async fn init_bluetooth(modules: &[Module]) -> anyhow::Result<HashMap<Module
                         Module::Writable(Writable {
                             service,
                             charac_write_id,
-                        }) => {}
+                        }) => {
+                            for characteristic in peripheral.characteristics() {
+                                println!("Checking characteristic {:?}", characteristic);
+                                if characteristic.uuid == Uuid::parse_str(charac_write_id).unwrap()
+                                    && characteristic.properties.contains(CharPropFlags::WRITE)
+                                {
+                                    final_modules.insert(
+                                        module.clone(),
+                                        ModuleDetails {
+                                            peripheral: peripheral.clone(),
+                                            characteristic: characteristic.clone(),
+                                        },
+                                    );
+                                    break;
+                                }
+                            }
+                        }
                     }
                 }
             }

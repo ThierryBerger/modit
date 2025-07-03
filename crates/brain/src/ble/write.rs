@@ -3,14 +3,10 @@ use btleplug::platform::Peripheral;
 
 pub async fn write(
     peripheral: &Peripheral,
-    characteristic: Characteristic,
-    message: &str,
+    characteristic: &Characteristic,
+    message: &[u8],
 ) -> Result<(), btleplug::Error> {
     peripheral
-        .write(
-            &characteristic,
-            message.as_bytes(),
-            WriteType::WithoutResponse,
-        )
+        .write(characteristic, message, WriteType::WithoutResponse)
         .await
 }

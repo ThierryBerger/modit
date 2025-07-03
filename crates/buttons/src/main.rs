@@ -25,7 +25,8 @@ use esp_alloc as _;
 use esp_backtrace as _;
 use esp_hal::{
     clock::CpuClock,
-    gpio::{Input, InputConfig, Pull},
+    gpio::{Input, InputConfig, Io, Level, Output, OutputConfig, Pull},
+    ledc::Ledc,
     main,
     rng::Rng,
     time,
@@ -64,6 +65,7 @@ fn main() -> ! {
     let button = Input::new(peripherals.GPIO0, config);
 
     let mut bluetooth = peripherals.BT;
+    let mut led = Output::new(peripherals.GPIO2, Level::Low, OutputConfig::default());
 
     let now = || time::Instant::now().duration_since_epoch().as_millis();
     loop {
@@ -90,6 +92,11 @@ fn main() -> ! {
 
         let mut wf2 = |offset: usize, data: &[u8]| {
             println!("RECEIVED: {} {:?}", offset, data);
+            if data[0] == 0 {
+                led.set_low();
+            } else {
+                led.set_high();
+            }
         };
 
         let mut rf3 = |_offset: usize, data: &mut [u8]| {
@@ -103,6 +110,7 @@ fn main() -> ! {
             uuid: "937312e0-2354-11eb-9f10-fbc30a62cf38",
             characteristics: [
                 characteristic {
+                    name: "led_charac",
                     // Hardcoded, needs to be similar to your brain's writable.
                     uuid: "927312e0-2354-11eb-9f10-fbc30a62cf38",
                     write: wf2,
