@@ -62,10 +62,16 @@ fn main() -> ! {
     .unwrap();
 
     let config = InputConfig::default().with_pull(Pull::Down);
-    let button = Input::new(peripherals.GPIO0, config);
+    let button = Input::new(
+        // built-in button
+        //peripherals.GPIO0,
+        // external button
+        peripherals.GPIO33,
+        config,
+    );
 
     let mut bluetooth = peripherals.BT;
-    let mut led = Output::new(peripherals.GPIO2, Level::Low, OutputConfig::default());
+    let mut led = Output::new(peripherals.GPIO26, Level::Low, OutputConfig::default());
 
     let now = || time::Instant::now().duration_since_epoch().as_millis();
     loop {
@@ -81,7 +87,7 @@ fn main() -> ! {
                 create_advertising_data(&[
                     AdStructure::Flags(LE_GENERAL_DISCOVERABLE | BR_EDR_NOT_SUPPORTED),
                     AdStructure::ServiceUuids16(&[Uuid::Uuid16(0x1809)]),
-                    AdStructure::CompleteLocalName(&format!("modit-{}", esp_hal::chip!())),
+                    AdStructure::CompleteLocalName(&format!("modit-{}-2", esp_hal::chip!())),
                 ])
                 .unwrap()
             )
@@ -106,19 +112,37 @@ fn main() -> ! {
             data[..len].copy_from_slice(bytes);
             len
         };
+        // gatt!([service {
+        //     uuid: "937312e0-2354-11eb-9f10-fbc30a62cf38",
+        //     characteristics: [
+        //         characteristic {
+        //             name: "led_charac",
+        //             // Hardcoded, needs to be similar to your brain's writable.
+        //             uuid: "927312e0-2354-11eb-9f10-fbc30a62cf38",
+        //             write: wf2,
+        //         },
+        //         characteristic {
+        //             name: "button_charac",
+        //             // Hardcoded, needs to be similar to your brain's notifier.
+        //             uuid: "917312e0-2354-11eb-9f10-fbc30a62cf38",
+        //             notify: true,
+        //             read: rf3,
+        //         },
+        //     ],
+        // },]);
         gatt!([service {
-            uuid: "937312e0-2354-11eb-9f10-fbc30a62cf38",
+            uuid: "937312e0-2354-11eb-9f10-fbc30a62cf30",
             characteristics: [
                 characteristic {
                     name: "led_charac",
                     // Hardcoded, needs to be similar to your brain's writable.
-                    uuid: "927312e0-2354-11eb-9f10-fbc30a62cf38",
+                    uuid: "927312e0-2354-11eb-9f10-fbc30a62cf30",
                     write: wf2,
                 },
                 characteristic {
                     name: "button_charac",
                     // Hardcoded, needs to be similar to your brain's notifier.
-                    uuid: "917312e0-2354-11eb-9f10-fbc30a62cf38",
+                    uuid: "917312e0-2354-11eb-9f10-fbc30a62cf30",
                     notify: true,
                     read: rf3,
                 },

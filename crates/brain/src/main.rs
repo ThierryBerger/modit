@@ -3,6 +3,7 @@ mod ble;
 use std::{sync::Arc, time::Duration};
 
 use ble::*;
+use futures::join;
 use shared::{Notifier, Writable};
 use tokio::{sync::Mutex, task};
 
@@ -64,51 +65,72 @@ async fn main() {
         },
     ];
 
-    for button in &buttons {
-        write::write(&button.led.peripheral, &button.led.characteristic, &[1])
+    // reset all buttons
+    for button in &buttons[0..] {
+        write::write(&button.led.peripheral, &button.led.characteristic, &[0])
             .await
             .unwrap();
     }
+    // light up random button
+    let mut rng = SmallRng::seed_from_u64(42);
+    let random_sleep_amount = rng.next_u64() % 1500 + 1000;
+    tokio::time::sleep(std::time::Duration::from_millis(random_sleep_amount)).await;
+    let rand_button_index = rng.next_u64() % buttons.len() as u64;
+    let details = &buttons[rand_button_index as usize];
+    write::write(&details.led.peripheral, &details.led.characteristic, &[1])
+        .await
+        .unwrap();
 
-    let expected_button = Arc::new(Mutex::new(Some(0)));
-    let rng = Arc::new(Mutex::new(SmallRng::seed_from_u64(42)));
-    loop {
-        for (i, button) in buttons.iter().enumerate() {
-            // FIXME: read is blocking for next notif, call a non blocking variant!
-            if let Some(value) = read::read_notification(&button.button.peripheral).await {
-                let Some(expected_button_index) = *expected_button.lock().await else {
-                    println!("button received ; but not expecting it yet!");
-                    continue;
-                };
-                if i != expected_button_index {
-                    println!("Incorrect button pressed.");
-                    continue;
-                }
+    let expected_button = Arc::new(Mutex::new(Some(rand_button_index)));
+    let rng = Arc::new(Mutex::new(rng));
 
-                println!("value received: {:?}", value);
-                write::write(&button.led.peripheral, &button.led.characteristic, &[0])
-                    .await
-                    .unwrap();
-                let expected_button_captured = expected_button.clone();
+    let mut tasks = Vec::new();
+    for (i, button) in buttons.iter().cloned().enumerate() {
+        let rng = rng.clone();
+        let buttons = buttons.clone();
+        let expected_button = expected_button.clone();
+        let task = task::spawn(async move {
+            loop {
+                if let Some(value) = read::read_notification(&button.button.peripheral).await {
+                    let Some(expected_button_index) = *expected_button.lock().await else {
+                        println!("button received ; but not expecting it yet!");
+                        continue;
+                    };
+                    if i != expected_button_index as usize {
+                        println!("Incorrect button pressed.");
+                        continue;
+                    }
 
-                *expected_button.lock().await = None;
-                let rng = rng.clone();
-                let buttons = buttons.clone();
-                task::spawn(async move {
-                    let mut rng = rng.lock().await;
-                    let random_sleep_amount = rng.next_u64() % 1500 + 1000;
-                    tokio::time::sleep(std::time::Duration::from_millis(random_sleep_amount)).await;
-                    let rand_button_index = rng.next_u64() % buttons.len() as u64;
-                    let details = &buttons[rand_button_index as usize];
-                    write::write(&details.led.peripheral, &details.led.characteristic, &[1])
+                    println!("value received: {:?}", value);
+                    write::write(&button.led.peripheral, &button.led.characteristic, &[0])
                         .await
                         .unwrap();
-                    *expected_button_captured.lock().await = Some(rand_button_index as usize);
-                });
-            } else {
-                println!("nothing received from {i}");
+
+                    *expected_button.lock().await = None;
+                    let rng = rng.clone();
+                    let buttons = buttons.clone();
+                    let expected_button_captured = expected_button.clone();
+                    task::spawn(async move {
+                        let mut rng = rng.lock().await;
+                        let random_sleep_amount = rng.next_u64() % 1500 + 1000;
+                        tokio::time::sleep(std::time::Duration::from_millis(random_sleep_amount))
+                            .await;
+                        let rand_button_index = rng.next_u64() % buttons.len() as u64;
+                        let details = &buttons[rand_button_index as usize];
+                        write::write(&details.led.peripheral, &details.led.characteristic, &[1])
+                            .await
+                            .unwrap();
+                        *expected_button_captured.lock().await = Some(rand_button_index);
+                    });
+                } else {
+                    println!("nothing received from {i}");
+                }
+                //tokio::time::sleep(std::time::Duration::from_millis(100)).await;
             }
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        });
+        tasks.push(task);
+    }
+    for t in tasks {
+        let _ = join!(t);
     }
 }
