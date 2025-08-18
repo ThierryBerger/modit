@@ -17,7 +17,6 @@ use bleps::{
     ad_structure::{
         create_advertising_data, AdStructure, BR_EDR_NOT_SUPPORTED, LE_GENERAL_DISCOVERABLE,
     },
-    att::Uuid,
     attribute_server::{AttributeServer, NotificationData, WorkResult},
     gatt, Ble, HciConnector,
 };
@@ -25,8 +24,7 @@ use esp_alloc as _;
 use esp_backtrace as _;
 use esp_hal::{
     clock::CpuClock,
-    gpio::{Input, InputConfig, Io, Level, Output, OutputConfig, Pull},
-    ledc::Ledc,
+    gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull},
     main,
     rng::Rng,
     time,
@@ -34,7 +32,6 @@ use esp_hal::{
 };
 use esp_println::println;
 use esp_wifi::{ble::controller::BleConnector, init};
-use shared::{Notifier, Writable};
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -63,8 +60,6 @@ fn main() -> ! {
 
     let config = InputConfig::default().with_pull(Pull::Down);
     let button = Input::new(
-        // built-in button
-        //peripherals.GPIO0,
         // external button
         peripherals.GPIO33,
         config,
@@ -112,36 +107,19 @@ fn main() -> ! {
             data[..len].copy_from_slice(bytes);
             len
         };
-        // gatt!([service {
-        //     uuid: "937312e0-2354-11eb-9f10-fbc30a62cf38",
-        //     characteristics: [
-        //         characteristic {
-        //             name: "led_charac",
-        //             // Hardcoded, needs to be similar to your brain's writable.
-        //             uuid: "927312e0-2354-11eb-9f10-fbc30a62cf38",
-        //             write: wf2,
-        //         },
-        //         characteristic {
-        //             name: "button_charac",
-        //             // Hardcoded, needs to be similar to your brain's notifier.
-        //             uuid: "917312e0-2354-11eb-9f10-fbc30a62cf38",
-        //             notify: true,
-        //             read: rf3,
-        //         },
-        //     ],
-        // },]);
         gatt!([service {
+            // Hardcoded, can be same for all modules?
             uuid: "937312e0-2354-11eb-9f10-fbc30a62cf30",
             characteristics: [
                 characteristic {
                     name: "led_charac",
-                    // Hardcoded, needs to be similar to your brain's writable.
+                    // Hardcoded, similar uuid for all leds
                     uuid: "927312e0-2354-11eb-9f10-fbc30a62cf30",
                     write: wf2,
                 },
                 characteristic {
                     name: "button_charac",
-                    // Hardcoded, needs to be similar to your brain's notifier.
+                    // Hardcoded, similar uuid for all buttons
                     uuid: "917312e0-2354-11eb-9f10-fbc30a62cf30",
                     notify: true,
                     read: rf3,
