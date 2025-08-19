@@ -131,13 +131,13 @@ fn main() -> ! {
         let mut srv = AttributeServer::new(&mut ble, &mut gatt_attributes, &mut rng);
         let mut tick: u128 = 0;
         let mut button_last_pushed_tick = 0;
+        let mut prev_button_state_is_high = false;
         loop {
             tick += 1;
             let mut notification = None;
 
-            if button.is_low() {
-                if tick.saturating_sub(button_last_pushed_tick) > 3 {
-                    println!("sending notif?");
+            if button.is_high() {
+                if !prev_button_state_is_high && tick.saturating_sub(button_last_pushed_tick) > 5 {
                     let mut cccd = [0u8; 1];
                     if let Some(1) = srv.get_characteristic_value(
                         button_charac_notify_enable_handle,
@@ -156,6 +156,7 @@ fn main() -> ! {
                 }
                 button_last_pushed_tick = tick;
             };
+            prev_button_state_is_high = button.is_high();
 
             match srv.do_work_with_notification(notification) {
                 Ok(res) => {
