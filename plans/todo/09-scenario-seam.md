@@ -58,7 +58,54 @@ Key properties:
   ignore or handle — it does not abort the process (plan 04).
 - The scenario is testable against a fake `Modules` with no radio.
 
-## Open questions
+## Design work done 2026-08-25 (not implemented)
+
+The plan says to answer the open questions by writing two different scenarios on
+paper first. That was done. Results below; the implementation is still to do.
+
+### The two scenarios, on paper
+
+**Whack-a-mole** (what exists): light one module, wait for *that* module's press,
+light another. Wrong presses are logged and ignored. All modules are watched
+concurrently.
+
+**Simon Says**: light a growing sequence with pauses, then wait for the player to
+press the same modules *in order*. A wrong press ends the round.
+
+### What that comparison revealed
+
+**The primitive is the wrong shape in the obvious design.** `wait_for_press()` on
+a single module handle serves whack-a-mole and cannot serve Simon Says, which needs
+"the next press from *any* module, tell me which". Building the single-module
+version first and generalising later means rewriting every scenario.
+
+So the primitive is:
+
+```rust
+// Blocks until any module in the set is pressed, or the timeout expires.
+async fn next_press(&self, timeout: Duration) -> Result<ModuleId, WaitError>;
+```
+
+and `module.wait_for_press(timeout)` becomes a thin filter over it. Both scenarios
+fall out of that; neither falls out of the other order.
+
+**Both scenarios need `Modules` as a set, not a Vec of handles.** Whack-a-mole
+picks a random one; Simon Says builds a sequence. Both want "all modules with role
+`button`" and stable ids, not indices.
+
+**Neither needs a lifecycle hook.** No setup/teardown/tick beyond what plain async
+code expresses.
+
+## Answers to the open questions
+
+| Question | Answer | Why |
+| -------- | ------ | --- |
+| What happens to a scenario when a module is lost? | Return `Err(WaitError::ModuleLost(id))` from the awaiting call. Do not suspend, do not abort the process. | The two scenarios want different things — whack-a-mole can carry on with the rest, Simon Says must end the round. Only the scenario knows. A helper for "wait until it comes back" covers the third case. |
+| One scenario or several concurrent? | One, for now. `run(scenario)` takes the whole module set. | Several needs disjoint ownership, which is a real design in itself. Nothing today wants it, and the single-scenario API is a strict subset. |
+| Does the runtime own the event loop, or the scenario? | The runtime. `modit::run(modules, scenario).await`. | The runtime already has to own acquisition, reconnection and the notification streams. Handing the loop to the scenario means handing it all of that too. |
+| Trait, or an async fn taking `&Modules`? | An async fn. | Neither scenario needs a lifecycle hook, so a trait would be ceremony. It can become one later without changing call sites. |
+
+## Original open questions
 
 - **What happens to a scenario when a module is lost?** Await transparently until it
   returns? Return `Err(ModuleLost)`? Suspend the whole scenario? Different games want
@@ -72,9 +119,11 @@ Key properties:
 
 ## Steps
 
-- [ ] Answer the open questions above, in the Notes section. Do this by writing two
-      *different* scenarios on paper first (whack-a-mole and Simon Says) and seeing
-      what they both need.
+- [x] Answer the open questions above. **Done 2026-08-25 — see the section at the
+      top. Implementation not started.**
+- [ ] Build `next_press(set, timeout)` as the primitive **first**, then express
+      `wait_for_press(module, timeout)` in terms of it. Doing it the other way
+      round means rewriting every scenario.
 - [ ] Extract BLE plumbing from `brain/src/main.rs` into `crates/modit` (or a `lib.rs`
       in `brain` — a separate crate only if a second binary appears).
 - [ ] Define the module handle API: `led().on()/.off()`, `wait_for_press(timeout)`,
@@ -95,4 +144,32 @@ Key properties:
 
 ## Notes
 
-_(answer the open questions here before writing any code)_
+### Why implementation was deliberately deferred (2026-08-25)
+
+Plans 01–08 landed in one pass. Plan 04 rewrote the round from a poll loop into an
+event loop holding notification streams — the largest behavioural change in the
+project — and **it has never run against hardware.**
+
+Stacking a large architectural refactor on top of that would mean that when
+something misbehaves on a real board, there is no way to tell whether the cause is
+the event loop or the seam. The event loop should be confirmed working first; then
+this plan starts from a known-good base.
+
+That is the only reason. The design above is settled and the work is ready to
+start.
+
+### What this plan should absorb when it runs
+
+Two items were moved here from plan 04 because they need this seam:
+
+1. **Per-module demotion and re-acquisition** (`ModuleState { Bound, Lost }`).
+   Recovery today is coarse: any module failing ends the round and everything is
+   re-acquired. Nothing panics and the run continues, but one wobbly board
+   interrupts the whole game. The `WaitError::ModuleLost` answer above is the
+   scenario-facing half of this.
+
+2. **`--simulate`**, a backend with no radio, driven by keyboard input. This is
+   the single highest-value item in the whole backlog for picking the project back
+   up — it makes scenarios testable on a laptop with no boards in the bag, and it
+   gives the tutorial a step 0. It only becomes possible once the runtime is
+   behind a trait.

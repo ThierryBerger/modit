@@ -35,25 +35,32 @@ Every plan carries these sections so that future-you can re-enter it cold:
 | 01 | [One command to build everything](done/01-cargo-workspace.md) | easy to get into | S | ✅ done |
 | 02 | [Delete the things that are not true](done/02-delete-the-lies.md) | easy to get into | S | ✅ done |
 | 03 | [Error messages that tell you what to do](done/03-errors-and-logging.md) | good errors | M | ✅ done |
-| 04 | [A run that cannot fail](todo/04-fail-free-run.md) | fail-free run | L | todo |
-| 05 | [Give each module a stable identity](todo/05-module-identity.md) | fail-free run | M | todo |
+| 04 | [A run that cannot fail](doing/04-fail-free-run.md) | fail-free run | L | 🔨 code done, **needs boards** |
+| 05 | [Give each module a stable identity](done/05-module-identity.md) | fail-free run | M | ✅ done |
 | 06 | [Make the firmware fail loudly](doing/06-firmware-hardening.md) | fail-free + errors | S | 🔨 code done, **needs a board** |
-| 07 | [Make module definitions real](todo/07-typed-module-definitions.md) | easy to get into | M | todo |
-| 08 | [The tutorial](todo/08-tutorial.md) | easy to get into | M | todo |
-| 09 | [A seam to write scenarios against](todo/09-scenario-seam.md) | easy to get into | L | todo |
+| 07 | [Make module definitions real](done/07-typed-module-definitions.md) | easy to get into | M | ✅ done |
+| 08 | [The tutorial](doing/08-tutorial.md) | easy to get into | M | 🔨 written, **never walked** |
+| 09 | [A seam to write scenarios against](todo/09-scenario-seam.md) | easy to get into | L | designed, not built |
 
 ### Pick this up first
 
-**Plan 06 is in `doing/` and needs hardware.** The code is written and linked, but
-the panic-reboot path, the zero-length-write guard and the 50 ms debounce window
-have never been exercised on a real board. Next time one is on the desk, work
-through the verification list at the bottom of that plan and move it to `done/`.
+**Get two boards on the desk and work through [`CHECKME.md`](../CHECKME.md).**
+Three plans are sitting in `doing/` waiting on hardware, and one of them (04)
+rewrote the round from a poll loop into an event loop — the largest behavioural
+change in the project, never run against a real module.
 
-Two open decisions are recorded rather than guessed:
+Then **plan 09**. Its design questions are answered (in the plan); only the
+implementation is left. It absorbs the two items plan 04 could not do:
+per-module recovery, and `--simulate` — the latter being the single most valuable
+thing here for picking the project up again, since it makes scenarios testable
+with no hardware at all.
 
-- **Renaming the `buttons` crate** (it is a button *and* an LED) — deferred into
-  plan 05, where the role vocabulary will make the right name obvious.
-- **Whether the RON config workflow is wanted at all** — recorded in plan 07.
+Decisions settled in this pass, so they do not get relitigated:
+
+- **No RON config workflow.** UUIDs are Rust constants in `shared::uuids`.
+  Reasoning in plan 07.
+- **`crates/buttons` renamed to `crates/module-button`**, matching the
+  `modit-<role>-<id>` scheme.
 
 ### Why this order
 
@@ -70,6 +77,5 @@ depends on what 04 and 05 produce.
 
 ### If you only have one evening
 
-~~01, 02, 06 and 03.~~ Done — that was the 2026-08-25 pass. Next: **plan 04**
-(a run that cannot fail). Start with the one-line `is_connected()` fix at the top
-of it; everything else in that plan depends on disconnects being detectable.
+Plug in two boards and run `CHECKME.md`. Everything else is written; what is
+missing is confirmation that it works.
