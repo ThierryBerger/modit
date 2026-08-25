@@ -25,10 +25,38 @@ Modit (mod it), is a reference to its modularity, containing:
 
 "moddable" here refers to writing custom Rust.
 
+## Status
+
+Early. One module type exists (a button with an LED, `crates/buttons`) and the
+brain runs a hardcoded whack-a-mole scenario. It works on real hardware, but the
+edges are rough -- see [`plans/`](plans/) for the audit and the ordered work.
+
 ## How to
 
-- Create a `.ron` file for each instance of modules needed.
-- Flash your modules with their relevant code, loading their respective asset at compile time.
-- Develop your custom brain, using the same assets.
-- Run your custom brain.
-- Enjoy!
+Today, in practice:
+
+- Wire an ESP32: button on GPIO33 (pull-down), LED on GPIO26.
+- Flash it: `just flash` -- needs the `esp` toolchain, run `just setup` first.
+- Run the brain: `just brain`.
+
+Run `just` on its own to see every available command.
+
+A guided walkthrough is [plan 08](plans/todo/08-tutorial.md); until it is written,
+the above is the whole story.
+
+### Defining modules
+
+Module UUIDs are currently Rust constants, hardcoded in two places: the `gatt!`
+invocation in `crates/buttons/src/main.rs` and the module definitions in
+`crates/brain/src/main.rs`. There is no config-file workflow -- whether to build
+one is an open decision recorded in
+[plan 07](plans/todo/07-typed-module-definitions.md).
+
+## Repository layout
+
+| Path | What |
+| ---- | ---- |
+| `crates/shared` | Module definition types, shared between host and firmware (`no_std`). |
+| `crates/brain`  | The host binary: scans, connects, runs the scenario. |
+| `crates/buttons`| ESP32 firmware for a button+LED module. Separate workspace -- different toolchain and target. |
+| `plans/`        | Audit and planned work. Start with [`plans/README.md`](plans/README.md). |
