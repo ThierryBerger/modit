@@ -1,2 +1,12 @@
-/target
+# Cargo build output. Matches the root workspace's target/ and the firmware
+# workspace's crates/buttons/target/.
+target/
+
+# Per-board configuration; see .env.example
 .env
+
+# rustfmt backups
+**/*.rs.bk
+
+# Debugger artifacts
+*.pdb

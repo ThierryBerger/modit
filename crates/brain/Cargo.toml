@@ -1,15 +1,14 @@
 [package]
 name = "brain"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 
 [dependencies]
+shared.workspace = true
+anyhow.workspace = true
 tokio = { version = "1", features = ["full"] }
 uuid = "1.17.0"
 btleplug = "0.11.8"
-anyhow = "1.0.98"
 futures = "0.3.31"
 pretty_env_logger = "0.5.0"
-shared = { path = "../shared" }
-ron = "0.10"
 rand = { version = "0.9", features = ["small_rng"], default-features = false }
