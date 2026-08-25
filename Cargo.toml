@@ -26,3 +26,4 @@ edition = "2024"
 [workspace.dependencies]
 shared = { path = "crates/shared" }
 anyhow = "1.0.98"
+log = "0.4"

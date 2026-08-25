@@ -34,7 +34,7 @@ Every plan carries these sections so that future-you can re-enter it cold:
 | - | ---- | ---- | ---- | ----- |
 | 01 | [One command to build everything](done/01-cargo-workspace.md) | easy to get into | S | ✅ done |
 | 02 | [Delete the things that are not true](done/02-delete-the-lies.md) | easy to get into | S | ✅ done |
-| 03 | [Error messages that tell you what to do](todo/03-errors-and-logging.md) | good errors | M | todo |
+| 03 | [Error messages that tell you what to do](done/03-errors-and-logging.md) | good errors | M | ✅ done |
 | 04 | [A run that cannot fail](todo/04-fail-free-run.md) | fail-free run | L | todo |
 | 05 | [Give each module a stable identity](todo/05-module-identity.md) | fail-free run | M | todo |
 | 06 | [Make the firmware fail loudly](doing/06-firmware-hardening.md) | fail-free + errors | S | 🔨 code done, **needs a board** |
@@ -70,6 +70,6 @@ depends on what 04 and 05 produce.
 
 ### If you only have one evening
 
-~~01, 02, and 06.~~ Done — that was the 2026-08-25 pass. Next evening: **plan 03**
-(errors and logging). It is self-contained, needs no hardware, and every plan after
-it is easier to debug once failures explain themselves.
+~~01, 02, 06 and 03.~~ Done — that was the 2026-08-25 pass. Next: **plan 04**
+(a run that cannot fail). Start with the one-line `is_connected()` fix at the top
+of it; everything else in that plan depends on disconnects being detectable.

@@ -79,6 +79,7 @@ dependencies = [
  "anyhow",
  "btleplug",
  "futures",
+ "log",
  "pretty_env_logger",
  "rand",
  "shared",

@@ -1,8 +1,8 @@
 # Audit — 2026-08-25
 
-> **Update 2026-08-25:** plans 01, 02 and 06 have been applied. Findings
-> **3, 4, 10, 17, 18, 19, 23, 24, 25, 27** are resolved; **26** is partially
-> resolved (the `-2` suffix is now labelled, not removed — that is plan 05).
+> **Update 2026-08-25:** plans 01, 02, 03 and 06 have been applied. Findings
+> **3, 4, 8, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 23, 24, 25, 27** are
+> resolved; **7** and **26** are partially resolved.
 > Resolved items are marked ~~struck through~~ below and kept for the record.
 > Everything unmarked is still true of the code today.
 
@@ -77,12 +77,12 @@ Severity: **[H]** breaks or will break in the field · **[M]** costs real time �
    `SmallRng::seed_from_u64(42)` ([`brain/src/main.rs:88`](../crates/brain/src/main.rs#L88))
    — every run plays the identical sequence.
 
-7. **[M] The re-arm task holds the RNG lock across a sleep.**
+7. **[M] The re-arm task holds the RNG lock across a sleep.** *(fixed in plan 03 as a drive-by: the delay and target index are taken while holding the lock, which is then dropped before the sleep. The wider concurrency rework is still plan 04.)*
    [`brain/src/main.rs:135-148`](../crates/brain/src/main.rs#L135-L148) —
    `rng.lock().await` is acquired, then the task sleeps 500–1000 ms while holding it.
    Any other task touching the RNG stalls for the full duration.
 
-8. **[M] `join!(t)` in a loop is a sequential await.**
+8. ~~**[M] `join!(t)` in a loop is a sequential await.**~~ — **fixed (plan 03):** `join_all`, and `JoinError` is logged with the module index.
    [`brain/src/main.rs:157-159`](../crates/brain/src/main.rs#L157-L159) —
    `futures::join!` with one argument is just `t.await`, and `let _ =` swallows the
    `JoinError`. A task that panicked is indistinguishable from one that finished.
@@ -98,36 +98,36 @@ Severity: **[H]** breaks or will break in the field · **[M]** costs real time �
 
 ### Failure modes and error messages
 
-11. **[H] `unwrap()` on every BLE operation.** `brain/src/main.rs` lines
+11. ~~**[H] `unwrap()` on every BLE operation.**~~ — **fixed (plan 03).** The game-loop writes now log and restart the round; making them per-module retries is plan 04. `brain/src/main.rs` lines
     69, 70, 73, 84, 95, 129, 146; `ble/mod.rs` lines 34, 49, 97, 132. Any transient
     radio hiccup — a device that walks out of range between the scan and the reset
     write — aborts the whole process with a backtrace instead of a retry.
 
-12. **[H] `Uuid::parse_str(…).unwrap()` runs per characteristic, per peripheral.**
+12. ~~**[H] `Uuid::parse_str(…).unwrap()` runs per characteristic, per peripheral.**~~ — **fixed (plan 03):** `validate_modules` runs before any radio work, and parsing is now once per peripheral.
     [`ble/mod.rs:34`](../crates/brain/src/ble/mod.rs#L34) and
     [`:49`](../crates/brain/src/ble/mod.rs#L49). A single typo in a module definition
     panics deep inside a scan loop, with a message that names neither the module nor
     the offending string. UUIDs should be parsed once, up front.
 
-13. **[H] Error messages describe actions the code does not take.**
+13. ~~**[H] Error messages describe actions the code does not take.**~~ — **fixed (plan 03).**
     `"No Bluetooth adapters found"` ([`ble/mod.rs:68`](../crates/brain/src/ble/mod.rs#L68))
     is printed and then execution continues into a loop over zero adapters, returning
     an all-`None` result. `"BLE peripheral devices were not found, sorry. Exiting..."`
     ([`:82`](../crates/brain/src/ble/mod.rs#L82)) does not exit. Neither says what to
     check or what to do.
 
-14. **[M] The retry loop is silent about why it is retrying.**
+14. ~~**[M] The retry loop is silent about why it is retrying.**~~ — **fixed (plan 03):** it names the unbound modules.
     [`brain/src/main.rs:75-78`](../crates/brain/src/main.rs#L75-L78) — if any module
     is missing it `continue`s without naming which one, so the console shows a 3-second
     scan cycle repeating forever with no diagnosis.
 
-15. **[M] `pretty_env_logger` is initialised and then never used.**
+15. ~~**[M] `pretty_env_logger` is initialised and then never used.**~~ — **fixed (plan 03).**
     [`brain/src/main.rs:56`](../crates/brain/src/main.rs#L56) — every message in the
     codebase is a raw `println!`/`eprintln!`. `RUST_LOG` has no effect, and the
     per-characteristic `"Checking notifier characteristic …"` chatter cannot be turned
     off.
 
-16. **[L] `dbg!(adapter_list)` left in.**
+16. ~~**[L] `dbg!(adapter_list)` left in.**~~ — **fixed (plan 03).** Note the same trap recurred via `Adapter`'s derived `Debug`; both now use `adapter_info()`.
     [`ble/mod.rs:73`](../crates/brain/src/ble/mod.rs#L73).
 
 ### Structure and onboarding
@@ -198,8 +198,8 @@ Severity: **[H]** breaks or will break in the field · **[M]** costs real time �
 The findings cluster into the three goals stated for this pass:
 
 - **Straightforward to get into** → ~~17~~, ~~18~~, ~~19~~, 20, 21, 22, ~~23~~, ~~25~~, 28
-- **Fail-free run** → 1, 2, ~~3~~, ~~4~~, 5, 11, 14
-- **Good error messages** → 11, 12, 13, 14, 15, 16
+- **Fail-free run** → 1, 2, ~~3~~, ~~4~~, 5, ~~11~~, ~~14~~
+- **Good error messages** → ~~11~~, ~~12~~, ~~13~~, ~~14~~, ~~15~~, ~~16~~ — **all resolved**
 
 See [`plans/README.md`](README.md) for the ordered work and current state.
 
