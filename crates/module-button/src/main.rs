@@ -156,19 +156,25 @@ fn main() -> ! {
         // TODO(plan-05): this is the natural place to expose the module's
         // identity (role, id, firmware version) once that exists.
         let mut read_button = |_offset: usize, _data: &mut [u8]| 0;
+        // These must stay in step with `shared::uuids`. They cannot reference it
+        // directly: `gatt!` parses UUIDs when it expands, and generates the handle
+        // identifiers used below from them, so it only accepts string literals.
+        //
+        // A host-side test (`firmware_uuids_match_shared`, in brain) reads this
+        // file and fails if any of them drifts.
         gatt!([service {
-            // Hardcoded, can be same for all modules?
+            // shared::uuids::SERVICE
             uuid: "937312e0-2354-11eb-9f10-fbc30a62cf30",
             characteristics: [
                 characteristic {
                     name: "led_charac",
-                    // Hardcoded, similar uuid for all leds
+                    // shared::uuids::LED_WRITE
                     uuid: "927312e0-2354-11eb-9f10-fbc30a62cf30",
                     write: write_led,
                 },
                 characteristic {
                     name: "button_charac",
-                    // Hardcoded, similar uuid for all buttons
+                    // shared::uuids::BUTTON_NOTIFY
                     uuid: "917312e0-2354-11eb-9f10-fbc30a62cf30",
                     notify: true,
                     read: read_button,

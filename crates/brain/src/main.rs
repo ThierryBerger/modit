@@ -10,7 +10,7 @@ use btleplug::platform::{Manager, Peripheral};
 use futures::StreamExt;
 use futures::future::join_all;
 use log::{debug, error, info, trace, warn};
-use shared::{Notifier, Writable};
+use shared::{Notifier, Writable, uuids};
 use tokio::sync::watch;
 use tokio::{sync::Mutex, task};
 
@@ -106,12 +106,12 @@ async fn main() -> anyhow::Result<()> {
     let module = |id| ButtonLed {
         id,
         button: Notifier {
-            service: "937312e0-2354-11eb-9f10-fbc30a62cf30",
-            charac_notify_id: "917312e0-2354-11eb-9f10-fbc30a62cf30",
+            service: uuids::SERVICE,
+            charac_notify_id: uuids::BUTTON_NOTIFY,
         },
         led: Writable {
-            service: "937312e0-2354-11eb-9f10-fbc30a62cf30",
-            charac_write_id: "927312e0-2354-11eb-9f10-fbc30a62cf30",
+            service: uuids::SERVICE,
+            charac_write_id: uuids::LED_WRITE,
         },
     };
     let modules = vec![module("a"), module("b")];
@@ -356,6 +356,58 @@ fn next_backoff(current: Duration) -> Duration {
 mod tests {
     use super::*;
 
+    /// The firmware cannot reference `shared::uuids` -- `gatt!` parses UUIDs when
+    /// it expands and only accepts string literals -- so the two are duplicated.
+    /// This is what stops them drifting apart, which is exactly what happened to
+    /// the old `assets/` files.
+    ///
+    /// Reads the firmware source rather than linking it, because that crate is
+    /// built for a different target with a different toolchain.
+    #[test]
+    fn firmware_uuids_match_shared() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../module-button/src/main.rs");
+        let src = std::fs::read_to_string(path)
+            .unwrap_or_else(|e| panic!("cannot read the firmware source at {path}: {e}"));
+
+        // Every `uuid: "..."` inside the gatt! block, in source order.
+        let found: Vec<&str> = src
+            .lines()
+            .filter_map(|line| {
+                let rest = line.trim().strip_prefix("uuid: \"")?;
+                rest.split('"').next()
+            })
+            .collect();
+
+        let expected = [uuids::SERVICE, uuids::LED_WRITE, uuids::BUTTON_NOTIFY];
+        assert_eq!(
+            found.len(),
+            expected.len(),
+            "expected {} uuid literals in the firmware, found {}: {found:?}. \
+             If the gatt! block changed shape, update this test.",
+            expected.len(),
+            found.len()
+        );
+        for (found, expected) in found.iter().zip(expected) {
+            assert_eq!(
+                *found, expected,
+                "the firmware and shared::uuids have drifted apart"
+            );
+        }
+    }
+
+    /// `shared` cannot check this itself: it has no UUID parser, by design.
+    #[test]
+    fn every_well_known_uuid_parses() {
+        for (name, value) in [
+            ("SERVICE", uuids::SERVICE),
+            ("LED_WRITE", uuids::LED_WRITE),
+            ("BUTTON_NOTIFY", uuids::BUTTON_NOTIFY),
+        ] {
+            uuid::Uuid::parse_str(value)
+                .unwrap_or_else(|e| panic!("uuids::{name} is not a valid UUID: {e}"));
+        }
+    }
+
     #[test]
     fn backoff_starts_small_doubles_and_caps() {
         let mut d = Duration::ZERO;
@@ -384,12 +436,12 @@ mod tests {
         let m = ButtonLed {
             id: "a",
             button: Notifier {
-                service: "937312e0-2354-11eb-9f10-fbc30a62cf30",
-                charac_notify_id: "917312e0-2354-11eb-9f10-fbc30a62cf30",
+                service: uuids::SERVICE,
+                charac_notify_id: uuids::BUTTON_NOTIFY,
             },
             led: Writable {
-                service: "937312e0-2354-11eb-9f10-fbc30a62cf30",
-                charac_write_id: "927312e0-2354-11eb-9f10-fbc30a62cf30",
+                service: uuids::SERVICE,
+                charac_write_id: uuids::LED_WRITE,
             },
         };
         // Must match `modit-{MODIT_ROLE}-{MODIT_ID}` in the firmware.
