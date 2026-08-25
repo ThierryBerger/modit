@@ -1,6 +1,6 @@
 # Workspace for the host-side crates.
 #
-# `crates/buttons` is deliberately NOT a member. It is firmware, and it needs a
+# `crates/module-button` is deliberately NOT a member. It is firmware, and it needs a
 # different toolchain and target than everything else:
 #
 #   toolchain   esp (Espressif's Xtensa fork)   vs.  stable
@@ -8,7 +8,7 @@
 #   std         no_std + build-std              vs.  std
 #
 # Cargo resolves features and picks a single target per workspace, so those two
-# worlds cannot share one. `crates/buttons` therefore carries its own
+# worlds cannot share one. `crates/module-button` therefore carries its own
 # `[workspace]` table (making it a workspace root of its own), its own
 # `Cargo.lock`, its own `rust-toolchain.toml` and its own `.cargo/config.toml`.
 #
@@ -16,7 +16,7 @@
 
 [workspace]
 members = ["crates/brain", "crates/shared"]
-exclude = ["crates/buttons"]
+exclude = ["crates/module-button"]
 resolver = "3"
 
 [workspace.package]

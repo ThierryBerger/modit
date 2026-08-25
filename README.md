@@ -27,7 +27,7 @@ Modit (mod it), is a reference to its modularity, containing:
 
 ## Status
 
-Early. One module type exists (a button with an LED, `crates/buttons`) and the
+Early. One module type exists (a button with an LED, `crates/module-button`) and the
 brain runs a hardcoded whack-a-mole scenario. It works on real hardware, but the
 edges are rough -- see [`plans/`](plans/) for the audit and the ordered work.
 
@@ -47,7 +47,7 @@ the above is the whole story.
 ### Defining modules
 
 Module UUIDs are currently Rust constants, hardcoded in two places: the `gatt!`
-invocation in `crates/buttons/src/main.rs` and the module definitions in
+invocation in `crates/module-button/src/main.rs` and the module definitions in
 `crates/brain/src/main.rs`. There is no config-file workflow -- whether to build
 one is an open decision recorded in
 [plan 07](plans/todo/07-typed-module-definitions.md).
@@ -58,5 +58,5 @@ one is an open decision recorded in
 | ---- | ---- |
 | `crates/shared` | Module definition types, shared between host and firmware (`no_std`). |
 | `crates/brain`  | The host binary: scans, connects, runs the scenario. |
-| `crates/buttons`| ESP32 firmware for a button+LED module. Separate workspace -- different toolchain and target. |
+| `crates/module-button`| ESP32 firmware for a button+LED module. Separate workspace -- different toolchain and target. |
 | `plans/`        | Audit and planned work. Start with [`plans/README.md`](plans/README.md). |

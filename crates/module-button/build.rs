@@ -1,4 +1,9 @@
 fn main() {
+    // MODIT_ID is baked into the firmware at compile time. Without this, cargo
+    // has no idea the binary depends on it and will happily reflash the
+    // previous board's id from cache.
+    println!("cargo:rerun-if-env-changed=MODIT_ID");
+
     linker_be_nice();
     // make sure linkall.x is the last linker script (otherwise might cause problems with flip-link)
     println!("cargo:rustc-link-arg=-Tlinkall.x");

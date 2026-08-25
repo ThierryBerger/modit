@@ -4,11 +4,11 @@
 
 [package]
 edition = "2021"
-name = "buttons"
+name = "module-button"
 version = "0.1.0"
 
 [[bin]]
-name = "buttons"
+name = "module-button"
 test = false
 bench = false
 

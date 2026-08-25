@@ -1,5 +1,5 @@
 # Cargo build output. Matches the root workspace's target/ and the firmware
-# workspace's crates/buttons/target/.
+# workspace's crates/module-button/target/.
 target/
 
 # Per-board configuration; see .env.example

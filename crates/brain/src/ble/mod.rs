@@ -52,6 +52,19 @@ fn parse_uuid(value: &str, field: &str) -> anyhow::Result<Uuid> {
     Uuid::parse_str(value).with_context(|| format!("{field} is not a valid UUID: {value:?}"))
 }
 
+/// A whole module: one definition that maps to exactly one physical board.
+///
+/// `ModuleDefinition` is implemented by the *parts* of a module (a `Notifier`, a
+/// `Writable`), which have no identity of their own. Only a `Module` knows which
+/// board it is, so only a `Module` can be bound by `init_bluetooth`.
+pub trait Module<T>: ModuleDefinition<T> {
+    /// The BLE local name the board must advertise, e.g. `modit-button-a`.
+    ///
+    /// This is what makes binding deterministic: without it, module 0 is
+    /// whichever board happened to answer the scan first.
+    fn advertised_name(&self) -> String;
+}
+
 pub trait ModuleDefinition<T> {
     /// Short name for this kind of module, used in logs and error messages.
     fn label(&self) -> String;
@@ -142,7 +155,7 @@ impl ModuleDefinition<Characteristic> for Writable {
 }
 
 /// Check every module definition before the radio is touched.
-pub fn validate_modules<T>(modules: &[impl ModuleDefinition<T>]) -> anyhow::Result<()> {
+pub fn validate_modules<T>(modules: &[impl Module<T>]) -> anyhow::Result<()> {
     if modules.is_empty() {
         bail!("no modules defined: there is nothing for the brain to talk to");
     }
@@ -151,12 +164,27 @@ pub fn validate_modules<T>(modules: &[impl ModuleDefinition<T>]) -> anyhow::Resu
             .validate()
             .with_context(|| format!("module {i} ({})", module.label()))?;
     }
+
+    // Two modules wanting the same board is a scenario bug that would otherwise
+    // show up as one module silently never binding.
+    for (i, module) in modules.iter().enumerate() {
+        let name = module.advertised_name();
+        if let Some(j) = modules[..i]
+            .iter()
+            .position(|other| other.advertised_name() == name)
+        {
+            bail!(
+                "modules {j} and {i} both expect the board advertising {name:?}; \
+                 give each one its own id"
+            );
+        }
+    }
     Ok(())
 }
 
 pub async fn init_bluetooth<T>(
     adapter_list: &[Adapter],
-    modules: &[impl ModuleDefinition<T>],
+    modules: &[impl Module<T>],
 ) -> anyhow::Result<Vec<Option<IdentifiedModule<T>>>> {
     validate_modules(modules)?;
 
@@ -222,7 +250,23 @@ pub async fn init_bluetooth<T>(
                     continue;
                 }
 
-                info!("found {local_name:?}");
+                // Bind by identity, not by discovery order.
+                let Some(index) = modules
+                    .iter()
+                    .position(|m| m.advertised_name() == local_name)
+                else {
+                    warn!(
+                        "{local_name:?} is a modit device but no module in this \
+                         scenario expects it -- flashed with the wrong id?"
+                    );
+                    continue;
+                };
+                if final_modules[index].is_some() {
+                    trace!("{local_name:?} is already bound, skipping");
+                    continue;
+                }
+
+                info!("found {local_name:?} (module {index})");
 
                 let is_connected = peripheral.is_connected().await.with_context(|| {
                     format!("could not query connection state of {local_name:?}")
@@ -243,17 +287,23 @@ pub async fn init_bluetooth<T>(
                     continue;
                 }
 
-                for (i, module) in modules.iter().enumerate() {
-                    if final_modules[i].is_some() {
-                        continue;
-                    }
-                    if let Some(found) = module.with_peripheral(peripheral).await {
-                        info!("bound module {i} ({}) to {local_name:?}", module.label());
-                        final_modules[i] = Some(IdentifiedModule {
+                let module = &modules[index];
+                match module.with_peripheral(peripheral).await {
+                    Some(found) => {
+                        info!(
+                            "bound module {index} ({}) to {local_name:?}",
+                            module.label()
+                        );
+                        final_modules[index] = Some(IdentifiedModule {
                             peripheral: peripheral.clone(),
                             module: found,
                         });
                     }
+                    None => warn!(
+                        "{local_name:?} advertises the right name but does not expose the \
+                         characteristics module {index} ({}) needs -- stale firmware?",
+                        module.label()
+                    ),
                 }
             }
         }
@@ -270,7 +320,7 @@ pub async fn init_bluetooth<T>(
 }
 
 /// Names the modules that no peripheral satisfied, for the retry message.
-pub fn unbound_labels<T, D: ModuleDefinition<T>>(
+pub fn unbound_labels<T, D: Module<T>>(
     modules: &[D],
     found: &[Option<IdentifiedModule<T>>],
 ) -> Vec<String> {
@@ -279,7 +329,7 @@ pub fn unbound_labels<T, D: ModuleDefinition<T>>(
         .enumerate()
         .zip(found)
         .filter(|(_, slot)| slot.is_none())
-        .map(|((i, module), _)| format!("module {i} ({})", module.label()))
+        .map(|((i, module), _)| format!("module {i} ({})", module.advertised_name()))
         .collect()
 }
 
@@ -291,10 +341,38 @@ mod tests {
     // One character short of a UUID.
     const BAD: &str = "937312e0-2354-11eb-9f10-fbc30a62cf3";
 
-    fn notifier(charac: &'static str) -> Notifier {
-        Notifier {
-            service: GOOD,
-            charac_notify_id: charac,
+    /// Smallest thing that satisfies `Module`, so the tests exercise the real
+    /// validation path rather than a parallel one.
+    struct TestModule {
+        id: &'static str,
+        inner: Notifier,
+    }
+
+    impl Module<Characteristic> for TestModule {
+        fn advertised_name(&self) -> String {
+            format!("modit-test-{}", self.id)
+        }
+    }
+
+    impl ModuleDefinition<Characteristic> for TestModule {
+        fn label(&self) -> String {
+            format!("test {}", self.id)
+        }
+        fn validate(&self) -> anyhow::Result<()> {
+            self.inner.validate()
+        }
+        async fn with_peripheral(&self, peripheral: &Peripheral) -> Option<Characteristic> {
+            self.inner.with_peripheral(peripheral).await
+        }
+    }
+
+    fn notifier(charac: &'static str) -> TestModule {
+        TestModule {
+            id: "a",
+            inner: Notifier {
+                service: GOOD,
+                charac_notify_id: charac,
+            },
         }
     }
 
@@ -305,7 +383,9 @@ mod tests {
 
     #[test]
     fn a_bad_uuid_names_the_module_the_field_and_the_value() {
-        let err = validate_modules::<Characteristic>(&[notifier(GOOD), notifier(BAD)])
+        let mut second = notifier(BAD);
+        second.id = "b";
+        let err = validate_modules::<Characteristic>(&[notifier(GOOD), second])
             .expect_err("a malformed UUID must not validate");
 
         // `{:#}` renders the whole anyhow context chain, which is what the user
@@ -327,7 +407,7 @@ mod tests {
 
     #[test]
     fn an_empty_module_list_is_an_error() {
-        let err = validate_modules::<Characteristic>(&[] as &[Notifier])
+        let err = validate_modules::<Characteristic>(&[] as &[TestModule])
             .expect_err("no modules is a configuration mistake, not a valid setup");
         assert!(format!("{err:#}").contains("no modules"));
     }
@@ -353,7 +433,17 @@ mod tests {
             service: GOOD,
             charac_write_id: BAD,
         };
-        let err = validate_modules::<Characteristic>(&[writable]).unwrap_err();
+        let err = writable.validate().unwrap_err();
         assert!(format!("{err:#}").contains("charac_write_id"));
+    }
+
+    #[test]
+    fn two_modules_claiming_the_same_board_is_an_error() {
+        // Same id twice: both would expect modit-test-a.
+        let err = validate_modules::<Characteristic>(&[notifier(GOOD), notifier(GOOD)])
+            .expect_err("duplicate ids must not validate");
+        let rendered = format!("{err:#}");
+        assert!(rendered.contains("modit-test-a"), "{rendered}");
+        assert!(rendered.contains("own id"), "{rendered}");
     }
 }

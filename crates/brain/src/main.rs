@@ -18,6 +18,9 @@ use rand::rngs::SmallRng;
 
 #[derive(Clone, Debug)]
 pub struct ButtonLed {
+    /// Which physical board this is. Must match the `MODIT_ID` it was flashed
+    /// with, so that module 0 is the same box on every run.
+    pub id: &'static str,
     pub button: Notifier,
     pub led: Writable,
 }
@@ -28,9 +31,15 @@ pub struct ButtonDetails {
     pub led: Characteristic,
 }
 
+impl Module<ButtonDetails> for ButtonLed {
+    fn advertised_name(&self) -> String {
+        format!("modit-button-{}", self.id)
+    }
+}
+
 impl ModuleDefinition<ButtonDetails> for ButtonLed {
     fn label(&self) -> String {
-        "button-led".to_string()
+        format!("button-led {}", self.id)
     }
 
     fn validate(&self) -> anyhow::Result<()> {
@@ -80,7 +89,10 @@ async fn main() -> anyhow::Result<()> {
         .parse_default_env()
         .init();
 
-    let button_led = ButtonLed {
+    // One entry per physical board. The id must match what the board was
+    // flashed with: `just flash a` produces the board this first entry expects.
+    let module = |id| ButtonLed {
+        id,
         button: Notifier {
             service: "937312e0-2354-11eb-9f10-fbc30a62cf30",
             charac_notify_id: "917312e0-2354-11eb-9f10-fbc30a62cf30",
@@ -90,7 +102,7 @@ async fn main() -> anyhow::Result<()> {
             charac_write_id: "927312e0-2354-11eb-9f10-fbc30a62cf30",
         },
     };
-    let modules = vec![button_led.clone(), button_led];
+    let modules = vec![module("a"), module("b")];
 
     // Fail on a bad definition before touching the radio, so a typo is reported
     // as a typo rather than as a scan that never finds anything.

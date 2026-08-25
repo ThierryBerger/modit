@@ -1,4 +1,4 @@
-//! Firmware for a modit button+LED module (ESP32).
+//! Firmware for a modit button module: one button, one LED (ESP32).
 //!
 //! Advertises over BLE and exposes a single GATT service with two
 //! characteristics:
@@ -50,6 +50,23 @@ esp_bootloader_esp_idf::esp_app_desc!();
 /// How long to ignore further edges after a button press, in milliseconds.
 const DEBOUNCE_MS: u64 = 50;
 
+/// What kind of module this firmware is. Part of the advertised name.
+const MODIT_ROLE: &str = "button";
+
+/// Which physical board this is, baked in at flash time.
+///
+/// Every board runs identical firmware, so without this they all advertise the
+/// same name and the brain cannot tell them apart -- "button 0" would be a
+/// different box on every run.
+const MODIT_ID: &str = match option_env!("MODIT_ID") {
+    Some(id) => id,
+    None => panic!(
+        "MODIT_ID is not set, so this board would be indistinguishable from every \
+         other one. Flash with `just flash <id>` from the repository root, for \
+         example `just flash a`."
+    ),
+};
+
 /// Called by `esp-backtrace` after it has printed the panic message and
 /// backtrace (via the `custom-halt` feature).
 ///
@@ -66,6 +83,11 @@ fn custom_halt() -> ! {
 #[main]
 fn main() -> ! {
     esp_println::logger::init_logger_from_env();
+
+    println!(
+        "modit {MODIT_ROLE} module, id {MODIT_ID:?}, on {}",
+        esp_hal::chip!()
+    );
 
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::_80MHz);
     let peripherals = esp_hal::init(config);
@@ -107,10 +129,7 @@ fn main() -> ! {
                     // Fully qualified: the bare `Uuid` name here would resolve only
                     // via the `use` that the `gatt!` macro below expands into.
                     AdStructure::ServiceUuids16(&[bleps::att::Uuid::Uuid16(0x1809)]),
-                    // TODO(plan-05): the trailing "-2" is a per-board disambiguator
-                    // that has to be hand-edited and reflashed. Replace with a
-                    // compile-time MODIT_ID so the brain can bind modules by identity.
-                    AdStructure::CompleteLocalName(&format!("modit-{}-2", esp_hal::chip!())),
+                    AdStructure::CompleteLocalName(&format!("modit-{MODIT_ROLE}-{MODIT_ID}")),
                 ])
                 .unwrap()
             )

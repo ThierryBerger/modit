@@ -4,7 +4,7 @@
 # merged -- see the comment at the top of Cargo.toml. These recipes hide that
 # split so you never have to remember which directory to be in.
 
-FIRMWARE := "crates/buttons"
+FIRMWARE := "crates/module-button"
 
 # List the available recipes.
 default:
@@ -18,16 +18,20 @@ check-host:
     cargo check --workspace --all-targets
 
 # Check the firmware. Needs the `esp` toolchain -- run `just setup` if this fails.
+# MODIT_ID only has to be *a* value to type-check; flashing is what makes it real.
 check-firmware:
-    cd {{FIRMWARE}} && cargo check --all-targets
+    cd {{FIRMWARE}} && MODIT_ID=check cargo check --all-targets
 
 # Run the brain against real hardware.
 brain *ARGS:
     RUST_LOG=${RUST_LOG:-info} cargo run -p brain -- {{ARGS}}
 
-# Build, flash and monitor the firmware. Connect exactly one board first.
-flash *ARGS:
-    cd {{FIRMWARE}} && cargo run --release {{ARGS}}
+# Build, flash and monitor the firmware for ONE board.
+#
+# The id distinguishes this board from the others and is baked into the binary,
+# so flash each board separately:  just flash a   /   just flash b
+flash id *ARGS:
+    cd {{FIRMWARE}} && MODIT_ID={{id}} cargo run --release {{ARGS}}
 
 # Watch the serial output of an already-flashed board.
 monitor:
@@ -46,7 +50,7 @@ fmt-check:
 # Lint both workspaces.
 clippy:
     cargo clippy --workspace --all-targets -- -D warnings
-    cd {{FIRMWARE}} && cargo clippy --all-targets -- -D warnings
+    cd {{FIRMWARE}} && MODIT_ID=check cargo clippy --all-targets -- -D warnings
 
 # Run the host tests.
 test:
