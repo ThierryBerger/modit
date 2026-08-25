@@ -1,20 +1,32 @@
 mod ble;
 
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
+use std::time::Duration;
 
-use anyhow::Context;
+use anyhow::{Context, bail};
 use ble::*;
-use btleplug::api::{Characteristic, Manager as _, Peripheral as _};
+use btleplug::api::{Characteristic, Manager as _, Peripheral as _, ValueNotification};
 use btleplug::platform::{Manager, Peripheral};
+use futures::StreamExt;
 use futures::future::join_all;
-use log::{debug, error, info, warn};
+use log::{debug, error, info, trace, warn};
 use shared::{Notifier, Writable};
+use tokio::sync::watch;
 use tokio::{sync::Mutex, task};
 
-use rand::RngCore;
-use rand::SeedableRng;
 use rand::rngs::SmallRng;
+use rand::{RngCore, SeedableRng};
+
+/// How often a watcher checks that its board is still there when nothing else
+/// is happening. The notification stream ending is the fast path; this catches
+/// a board that vanished without closing anything.
+const LIVENESS_INTERVAL: Duration = Duration::from_secs(1);
+
+/// First wait after a failed acquisition.
+const BACKOFF_START: Duration = Duration::from_secs(3);
+
+/// Ceiling on the acquisition backoff.
+const BACKOFF_MAX: Duration = Duration::from_secs(30);
 
 #[derive(Clone, Debug)]
 pub struct ButtonLed {
@@ -117,124 +129,270 @@ async fn main() -> anyhow::Result<()> {
         .context("could not list Bluetooth adapters")?;
     info!("{} Bluetooth adapter(s) available", adapter_list.len());
 
+    // Acquisition backs off so a genuinely absent module does not spin the radio.
+    let mut backoff = Duration::ZERO;
+
     'session: loop {
+        if !backoff.is_zero() {
+            debug!("waiting {backoff:?} before rescanning");
+            tokio::time::sleep(backoff).await;
+        }
+
         let details = init_bluetooth(&adapter_list, &modules).await?;
 
         let missing = unbound_labels(&modules, &details);
         if !missing.is_empty() {
+            backoff = next_backoff(backoff);
             warn!(
-                "waiting for {} module(s): {}; rescanning",
+                "waiting for {} module(s): {}; rescanning in {backoff:?}",
                 missing.len(),
                 missing.join(", ")
             );
             continue 'session;
         }
         let buttons = details.into_iter().flatten().collect::<Vec<_>>();
+        if buttons.is_empty() {
+            // `validate_modules` rejects an empty scenario, so this is
+            // unreachable -- but the modulo below would divide by zero.
+            bail!("no modules bound, refusing to start a round");
+        }
+        backoff = Duration::ZERO;
         info!("all {} module(s) bound, starting the game", buttons.len());
+
+        // Open each notification stream exactly once, before the round starts,
+        // and keep it for the whole round. Anything else drops presses.
+        let mut streams = Vec::with_capacity(buttons.len());
+        for (i, button) in buttons.iter().enumerate() {
+            match read::notifications(&button.peripheral).await {
+                Ok(stream) => streams.push(stream),
+                Err(err) => {
+                    backoff = next_backoff(backoff);
+                    warn!("could not listen to module {i}, restarting the round: {err}");
+                    continue 'session;
+                }
+            }
+        }
 
         // reset all buttons
         for (i, button) in buttons.iter().enumerate() {
-            // TODO(plan-04): a module that left between the scan and this write
-            // should be demoted and re-acquired, not abort the round.
             if let Err(err) = write::write(&button.peripheral, &button.module.led, &[0]).await {
+                backoff = next_backoff(backoff);
                 warn!("could not reset the LED on module {i}, restarting the round: {err}");
                 continue 'session;
             }
         }
 
-        // light up random button
-        let mut rng = SmallRng::seed_from_u64(42);
-        let random_sleep_amount = rng.next_u64() % 1500 + 1000;
-        tokio::time::sleep(std::time::Duration::from_millis(random_sleep_amount)).await;
-        let rand_button_index = rng.next_u64() % buttons.len() as u64;
-        let details = &buttons[rand_button_index as usize];
+        // Seeded from the OS, not a constant: the old `seed_from_u64(42)` made
+        // every run play the identical sequence.
+        let mut rng = SmallRng::from_os_rng();
+
+        // Arm the first module.
+        let (delay, first) = {
+            let delay = Duration::from_millis(rng.next_u64() % 1500 + 1000);
+            (delay, rng.next_u64() % buttons.len() as u64)
+        };
+        tokio::time::sleep(delay).await;
+        let details = &buttons[first as usize];
         if let Err(err) = write::write(&details.peripheral, &details.module.led, &[1]).await {
-            warn!("could not light module {rand_button_index}, restarting the round: {err}");
+            backoff = next_backoff(backoff);
+            warn!("could not light module {first}, restarting the round: {err}");
             continue 'session;
         }
-        info!("module {rand_button_index} is lit");
+        info!("module {first} is lit");
 
-        let expected_button = Arc::new(Mutex::new(Some(rand_button_index)));
+        let expected_button = Arc::new(Mutex::new(Some(first)));
         let rng = Arc::new(Mutex::new(rng));
 
+        // A round ends when any watcher decides it cannot continue. `watch` is
+        // used rather than an AtomicBool so the watchers can *await* the signal
+        // inside `select!` instead of polling for it.
+        let (abort_tx, abort_rx) = watch::channel(false);
+        let abort_tx = Arc::new(abort_tx);
+
         let mut tasks = Vec::new();
-        let should_abort = Arc::new(AtomicBool::new(false));
-        for (i, button) in buttons.iter().cloned().enumerate() {
+        for ((i, button), stream) in buttons.iter().cloned().enumerate().zip(streams) {
             let rng = rng.clone();
             let buttons = buttons.clone();
             let expected_button = expected_button.clone();
-            let should_abort = should_abort.clone();
+            let abort_tx = abort_tx.clone();
+            let mut abort_rx = abort_rx.clone();
+
             let task = task::spawn(async move {
+                let mut stream = stream;
+                // Only characteristic this module notifies on; a second notifier
+                // on the same board would otherwise be indistinguishable.
+                let wanted = button.module.button.uuid;
+                let mut liveness = tokio::time::interval(LIVENESS_INTERVAL);
+                liveness.tick().await; // the first tick is immediate
+
                 loop {
-                    if !is_connected(&button.peripheral).await {
-                        should_abort.store(true, std::sync::atomic::Ordering::Relaxed);
-                        warn!("module {i} disconnected, restarting the round");
-                    }
-                    if should_abort.load(std::sync::atomic::Ordering::Relaxed) {
-                        break;
-                    }
-                    if let Some(value) = read::read_notification(&button.peripheral).await {
-                        let Some(expected_button_index) = *expected_button.lock().await else {
-                            debug!("module {i} pressed, but no module is armed yet");
-                            continue;
-                        };
-                        if i != expected_button_index as usize {
-                            info!("module {i} pressed, but {expected_button_index} was expected");
-                            continue;
-                        }
+                    tokio::select! {
+                        // Someone else ended the round.
+                        _ = abort_rx.changed() => break,
 
-                        info!("module {i} hit ({:?})", value.value);
-                        if let Err(err) =
-                            write::write(&button.peripheral, &button.module.led, &[0]).await
-                        {
-                            // TODO(plan-04): demote this module and carry on
-                            // rather than restarting the whole round.
-                            error!("could not turn off the LED on module {i}: {err}");
-                            should_abort.store(true, std::sync::atomic::Ordering::Relaxed);
-                            break;
-                        }
-
-                        *expected_button.lock().await = None;
-                        let rng = rng.clone();
-                        let buttons = buttons.clone();
-                        let expected_button_captured = expected_button.clone();
-                        let should_abort = should_abort.clone();
-                        task::spawn(async move {
-                            // Take the values we need, then release the lock:
-                            // holding it across the sleep below stalls every
-                            // other task for the whole delay.
-                            let (random_sleep_amount, rand_button_index) = {
-                                let mut rng = rng.lock().await;
-                                (
-                                    rng.next_u64() % 500 + 500,
-                                    rng.next_u64() % buttons.len() as u64,
-                                )
+                        // A notification arrived, or the stream ended.
+                        item = stream.next() => {
+                            let Some(notification) = item else {
+                                warn!("module {i} stopped notifying, ending the round");
+                                let _ = abort_tx.send(true);
+                                break;
                             };
-                            tokio::time::sleep(std::time::Duration::from_millis(
-                                random_sleep_amount,
-                            ))
-                            .await;
-                            let details = &buttons[rand_button_index as usize];
-                            if let Err(err) =
-                                write::write(&details.peripheral, &details.module.led, &[1]).await
-                            {
-                                error!("could not light module {rand_button_index}: {err}");
-                                should_abort.store(true, std::sync::atomic::Ordering::Relaxed);
-                                return;
+                            if notification.uuid != wanted {
+                                trace!("module {i}: ignoring notification from {}", notification.uuid);
+                                continue;
                             }
-                            info!("module {rand_button_index} is lit");
-                            *expected_button_captured.lock().await = Some(rand_button_index);
-                        });
+                            if !handle_press(
+                                i,
+                                &notification,
+                                &button,
+                                &buttons,
+                                &expected_button,
+                                &rng,
+                                &abort_tx,
+                            )
+                            .await
+                            {
+                                break;
+                            }
+                        }
+
+                        // Nothing has happened for a while: is the board still there?
+                        _ = liveness.tick() => {
+                            if !is_connected(&button.peripheral).await {
+                                warn!("module {i} disconnected, ending the round");
+                                let _ = abort_tx.send(true);
+                                break;
+                            }
+                        }
                     }
                 }
             });
             tasks.push(task);
         }
+        drop(abort_rx);
 
         for (i, result) in join_all(tasks).await.into_iter().enumerate() {
             if let Err(err) = result {
                 error!("the task watching module {i} did not exit cleanly: {err}");
             }
         }
+
+        info!("round over, re-acquiring modules");
+        backoff = next_backoff(backoff);
+    }
+}
+
+/// Handle one press on module `i`. Returns `false` if the task should stop.
+#[allow(clippy::too_many_arguments)]
+async fn handle_press(
+    i: usize,
+    notification: &ValueNotification,
+    button: &IdentifiedModule<ButtonDetails>,
+    buttons: &[IdentifiedModule<ButtonDetails>],
+    expected_button: &Arc<Mutex<Option<u64>>>,
+    rng: &Arc<Mutex<SmallRng>>,
+    abort_tx: &Arc<watch::Sender<bool>>,
+) -> bool {
+    let Some(expected) = *expected_button.lock().await else {
+        debug!("module {i} pressed, but no module is armed yet");
+        return true;
+    };
+    if i != expected as usize {
+        info!("module {i} pressed, but {expected} was expected");
+        return true;
+    }
+
+    info!("module {i} hit ({:?})", notification.value);
+    if let Err(err) = write::write(&button.peripheral, &button.module.led, &[0]).await {
+        error!("could not turn off the LED on module {i}, ending the round: {err}");
+        let _ = abort_tx.send(true);
+        return false;
+    }
+
+    *expected_button.lock().await = None;
+
+    // Arm the next module after a delay, without blocking this watcher.
+    let buttons = buttons.to_vec();
+    let expected_button = expected_button.clone();
+    let rng = rng.clone();
+    let abort_tx = abort_tx.clone();
+    task::spawn(async move {
+        // Take what we need, then release the lock: holding it across the sleep
+        // below would stall every other task for the whole delay.
+        let (delay, next) = {
+            let mut rng = rng.lock().await;
+            (
+                Duration::from_millis(rng.next_u64() % 500 + 500),
+                rng.next_u64() % buttons.len() as u64,
+            )
+        };
+        tokio::time::sleep(delay).await;
+
+        let details = &buttons[next as usize];
+        if let Err(err) = write::write(&details.peripheral, &details.module.led, &[1]).await {
+            error!("could not light module {next}, ending the round: {err}");
+            let _ = abort_tx.send(true);
+            return;
+        }
+        info!("module {next} is lit");
+        *expected_button.lock().await = Some(next);
+    });
+
+    true
+}
+
+/// Grow the wait between acquisition attempts, so an absent module does not
+/// spin the radio forever. Starts at [`BACKOFF_START`], doubles, caps at
+/// [`BACKOFF_MAX`].
+fn next_backoff(current: Duration) -> Duration {
+    if current.is_zero() {
+        BACKOFF_START
+    } else {
+        (current * 2).min(BACKOFF_MAX)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn backoff_starts_small_doubles_and_caps() {
+        let mut d = Duration::ZERO;
+        d = next_backoff(d);
+        assert_eq!(d, BACKOFF_START);
+
+        d = next_backoff(d);
+        assert_eq!(d, BACKOFF_START * 2);
+
+        // However many failures, it must settle at the cap rather than growing
+        // without bound.
+        for _ in 0..20 {
+            d = next_backoff(d);
+        }
+        assert_eq!(d, BACKOFF_MAX);
+    }
+
+    #[test]
+    fn backoff_never_exceeds_the_cap() {
+        assert_eq!(next_backoff(BACKOFF_MAX), BACKOFF_MAX);
+        assert!(next_backoff(BACKOFF_MAX - Duration::from_secs(1)) <= BACKOFF_MAX);
+    }
+
+    #[test]
+    fn a_module_advertises_the_name_its_board_was_flashed_with() {
+        let m = ButtonLed {
+            id: "a",
+            button: Notifier {
+                service: "937312e0-2354-11eb-9f10-fbc30a62cf30",
+                charac_notify_id: "917312e0-2354-11eb-9f10-fbc30a62cf30",
+            },
+            led: Writable {
+                service: "937312e0-2354-11eb-9f10-fbc30a62cf30",
+                charac_write_id: "927312e0-2354-11eb-9f10-fbc30a62cf30",
+            },
+        };
+        // Must match `modit-{MODIT_ROLE}-{MODIT_ID}` in the firmware.
+        assert_eq!(m.advertised_name(), "modit-button-a");
     }
 }
