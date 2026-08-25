@@ -64,10 +64,7 @@ async fn main() {
             charac_write_id: "927312e0-2354-11eb-9f10-fbc30a62cf30",
         },
     };
-    let modules = vec![
-        button_led.clone(),
-        //button_led
-    ];
+    let modules = vec![button_led.clone(), button_led];
 
     let manager = Manager::new().await.unwrap();
     let adapter_list = manager.adapters().await.unwrap();
