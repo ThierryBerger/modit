@@ -1,3 +1,7 @@
+# Firmware crate. This is its own workspace root on purpose -- see the comment
+# in the repository root `Cargo.toml` for why it cannot join the host workspace.
+[workspace]
+
 [package]
 edition = "2021"
 name = "buttons"
@@ -10,7 +14,6 @@ bench = false
 
 [dependencies]
 shared = { path = "../shared" }
-#ron = "0.10"
 esp-bootloader-esp-idf = "0.1.0"
 esp-hal = { version = "=1.0.0-beta.1", features = ["esp32", "unstable"] }
 bleps = { git = "https://github.com/bjoernQ/bleps", package = "bleps", rev = "a5148d8ae679e021b78f53fd33afb8bb35d0b62e", features = [
@@ -26,10 +29,19 @@ esp-wifi = { version = "0.14.1", features = [
     "esp-alloc",
     "esp32",
 ] }
-esp-backtrace = { version = "0.16", features = ["println", "esp32"] }
+# panic-handler and exception-handler are NOT default features. Without them
+# nothing installs a handler, which is why this crate used to carry its own
+# silent `loop {}` one. custom-halt lets us reboot after printing the backtrace
+# (see `custom_halt` in src/main.rs) instead of stalling the cores forever.
+esp-backtrace = { version = "0.16", features = [
+    "println",
+    "esp32",
+    "panic-handler",
+    "exception-handler",
+    "custom-halt",
+] }
 esp-println = { version = "0.14", features = ["esp32", "log-04"] }
 cfg-if = "1.0"
-dotenvy_macro = "0.15"
 
 [profile.dev]
 # Rust debug is too slow.
