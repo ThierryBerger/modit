@@ -41,16 +41,18 @@ Today, in practice:
 
 Run `just` on its own to see every available command.
 
-A guided walkthrough is [plan 08](plans/todo/08-tutorial.md); until it is written,
-the above is the whole story.
+Start with the **[tutorial](docs/TUTORIAL.md)** for the full walkthrough, and
+[hardware](docs/HARDWARE.md) for wiring.
 
 ### Defining modules
 
-Module UUIDs are currently Rust constants, hardcoded in two places: the `gatt!`
-invocation in `crates/module-button/src/main.rs` and the module definitions in
-`crates/brain/src/main.rs`. There is no config-file workflow -- whether to build
-one is an open decision recorded in
-[plan 07](plans/todo/07-typed-module-definitions.md).
+Module UUIDs live in `shared::uuids`, which `brain` references directly. The
+firmware duplicates them as string literals because the `gatt!` macro needs
+literals; a test fails if the two drift apart.
+
+There is deliberately **no config-file workflow** -- a scenario is Rust, and so
+are its UUIDs. The reasoning is recorded in
+[plan 07](plans/done/07-typed-module-definitions.md).
 
 ## Repository layout
 
@@ -60,3 +62,4 @@ one is an open decision recorded in
 | `crates/brain`  | The host binary: scans, connects, runs the scenario. |
 | `crates/module-button`| ESP32 firmware for a button+LED module. Separate workspace -- different toolchain and target. |
 | `plans/`        | Audit and planned work. Start with [`plans/README.md`](plans/README.md). |
+| `docs/`         | [Tutorial](docs/TUTORIAL.md), [hardware](docs/HARDWARE.md), [architecture](docs/ARCHITECTURE.md). |

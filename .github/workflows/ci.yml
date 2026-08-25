@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  host:
+    name: host crates (shared + brain)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Test
+        # Includes firmware_uuids_match_shared, which reads the firmware source
+        # to check it has not drifted from shared::uuids. That is why the host
+        # job is the one that catches UUID drift.
+        run: cargo test --workspace
+
+  firmware:
+    name: firmware (module-button)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: crates/module-button
+    env:
+      # The id only has to be *a* value to compile; flashing is what makes it
+      # real. Without it the build fails by design.
+      MODIT_ID: ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: esp-rs/xtensa-toolchain@v1.5
+        with:
+          default: true
+          buildtargets: esp32
+          ldproxy: false
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/module-button
+
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Build
+        # A real build, not just check: the panic handler resolves at link time.
+        run: cargo build --release

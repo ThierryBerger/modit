@@ -56,8 +56,13 @@ clippy:
 test:
     cargo test --workspace
 
-# Everything CI would run.
-ci: fmt-check check clippy test
+# Everything CI would run. Mirrors .github/workflows/ci.yml.
+ci: fmt-check check clippy test build-firmware
+
+# Build (not just check) the firmware: the panic handler resolves at link time,
+# so `cargo check` cannot catch a missing custom_halt.
+build-firmware:
+    cd {{FIRMWARE}} && MODIT_ID=check cargo build --release
 
 # Install the firmware toolchain. Remember to `source ~/export-esp.sh` after.
 setup:

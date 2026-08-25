@@ -78,27 +78,85 @@ is localised to one step rather than discovered at the end.
 
 ## Steps
 
-- [ ] Write `docs/HARDWARE.md` with the pinout and a wiring diagram.
-- [ ] Write `docs/TUTORIAL.md` following the outline.
-- [ ] Trim the README's "How to" and link out.
-- [ ] Add the architecture notes.
-- [ ] **Follow the tutorial on a clean machine, or at minimum a clean shell and a
+- [x] Write `docs/HARDWARE.md` with the pinout and a wiring diagram.
+- [x] Write `docs/TUTORIAL.md` following the outline.
+- [x] Trim the README's "How to" and link out.
+- [x] Add the architecture notes.
+- [~] **Follow the tutorial on a clean machine, or at minimum a clean shell and a
       fresh clone.** Every step that needed improvisation is a bug — fix the code,
       then fix the doc.
-- [ ] Add CI that runs `cargo check` on both workspaces, `cargo fmt --check`, and
+      **PARTIALLY DONE — host steps only. The hardware steps have never been
+      walked. This is the main outstanding item; see CHECKME.md.**
+- [x] Add CI that runs `cargo check` on both workspaces, `cargo fmt --check`, and
       `cargo clippy -- -D warnings`. Building the firmware in CI needs the `esp`
       toolchain — `esp-rs/xtensa-toolchain` is the usual action.
-- [ ] Add the `--simulate` mode from plan 04 if it is not done, and give the
-      tutorial a "try it without hardware" step 0. This is what makes the project
-      re-enterable on a train with no boards in your bag.
+- [~] Add the `--simulate` mode from plan 04 if it is not done, and give the
+      tutorial a "try it without hardware" step 0.
+      **NOT DONE — it needs plan 09's seam. The tutorial says so explicitly rather
+      than pretending otherwise.**
 
 ## Done when
 
-- A fresh clone plus the tutorial produces a working game with no source reading.
-- Every command in the tutorial is copy-pasteable and was actually run.
-- Every log line quoted in the tutorial matches what the code emits.
-- CI is green on `main`.
+- [~] A fresh clone plus the tutorial produces a working game with no source
+      reading. **Unverified — needs boards.**
+- [~] Every command in the tutorial is copy-pasteable and was actually run.
+      **Host commands yes; `just flash <id>` and everything downstream, no.**
+- [~] Every log line quoted in the tutorial matches what the code emits.
+      **Derived from the source, not observed. Flagged in CHECKME.md.**
+- [~] CI is green on `main`. **Workflow written; `just ci` passes locally. Never
+      run on GitHub — there is no remote configured.**
 
 ## Notes
 
-_(fill in while doing — especially every place you had to improvise)_
+Written 2026-08-25. **Written, not walked.** Read the verification caveat below
+before trusting it.
+
+### What was written
+
+| File | Contents |
+| ---- | -------- |
+| `docs/TUTORIAL.md` | Ten steps, each ending in something observable, plus a troubleshooting table keyed by symptom. |
+| `docs/HARDWARE.md` | BOM, pinout, ASCII wiring diagram, the two mistakes that produce silent failures. |
+| `docs/ARCHITECTURE.md` | The crate split and why, the two traits and why, where UUIDs live, the shape of a round, known rough edges. |
+| `.github/workflows/ci.yml` | Two jobs: host (fmt, clippy, test) and firmware (fmt, clippy, **build**). |
+
+The README now points at all three and no longer tries to be the manual.
+
+### Deliberate choices
+
+**Step 5 exists to bisect failures.** "Confirm it advertises, with a phone" is not
+strictly necessary to get a working game, but it is the single point that
+separates "firmware problem" from "host problem". Everything after it can be
+diagnosed as host-side. Worth its place even though it needs a second device.
+
+**The troubleshooting table is keyed by symptom, not by cause.** You look things
+up by what you can see, which is the only thing you have when you are stuck.
+
+**CI builds the firmware rather than checking it.** `cargo check` does not link,
+and the panic handler from plan 06 resolves at link time — `custom_halt` could go
+missing and `check` would not notice. `just ci` was updated to match, so local and
+CI agree.
+
+**The tutorial is honest about plan 09.** Step 10 ("write your own scenario") says
+plainly that BLE plumbing and game rules are still interleaved and that writing a
+scenario today means reading some btleplug. Overselling that step is how a
+tutorial loses a reader's trust for everything else in it.
+
+### The verification caveat
+
+Steps 1, 3 and 8 were run. Steps 2 and 4–7, and 9, involve a board and were not.
+
+**The log lines quoted in step 8 were derived by reading the source, not by
+observing a successful bind.** They should be right — the format strings are a few
+lines away in `ble/mod.rs` — but "should be right" is exactly the kind of claim
+this project already had too much of. They are flagged in `CHECKME.md` as the
+first thing to correct when a board is on the desk.
+
+The tutorial itself carries a status note saying the same thing, so a reader is
+not misled by it before it has been walked.
+
+### CI is unrun
+
+There is no git remote on this repository, so the workflow has never executed. The
+`esp-rs/xtensa-toolchain` action version in particular is worth checking on first
+push.
