@@ -91,8 +91,9 @@ with radio load); it is now a 50 ms wall-clock window, `DEBOUNCE_MS` in
 
 50 ms is a textbook default, not a measured value for *your* switch.
 
-- [ ] One deliberate press → exactly one `sending notif` / `button pressed,
-      notifying` in the monitor. If you see doubles, raise `DEBOUNCE_MS`.
+- [ ] One deliberate press → exactly one `button pressed, ...` line in the
+      monitor. If you see doubles, raise `DEBOUNCE_MS`. (Easiest to check right
+      after boot, before the brain connects — presses are logged either way.)
 - [ ] Rapid deliberate presses still all register. If they are being swallowed,
       lower it.
 
@@ -121,10 +122,13 @@ Lower priority only because these need a deliberate malformed write to trigger.
 Steps 1, 3 and 8 were run; everything involving a board was not.
 
 - [ ] Follow it start to finish, ideally in a fresh shell and a fresh clone.
-- [ ] **Correct the log lines quoted in step 8.** They were derived by reading the
+- [ ] **Correct the log lines quoted in step 9.** They were derived by reading the
       format strings in `ble/mod.rs`, *not* by observing a successful bind. They
       should be right, but "should be right" is exactly the kind of claim this
       repo already had too much of.
+- [ ] **Check the step 5 wiring self-test does what it claims** — three visible
+      blinks, and the button warning firing when the button is deliberately wired
+      to GND rather than 3V3. It is new firmware code, written blind.
 - [ ] Fix anything you had to improvise. A step that needs improvising is a bug in
       the code, not the doc.
 - [ ] Remove the status warning at the top of the tutorial once it has been walked.

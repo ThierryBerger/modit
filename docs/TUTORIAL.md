@@ -6,7 +6,7 @@ to one step instead of discovered at the end.
 
 Allow about an hour the first time, most of it waiting for `espup install`.
 
-> **Status:** the host-side steps (1, 3, 8) have been run as written. The steps
+> **Status:** the host-side steps (1, 3, 9) have been run as written. The steps
 > involving a board have not yet been walked through end to end — see
 > [`CHECKME.md`](../CHECKME.md). If something here is wrong, that is a bug in this
 > file; please fix it as you go.
@@ -14,7 +14,7 @@ Allow about an hour the first time, most of it waiting for `espup install`.
 ## What you need
 
 Two ESP32 modules, wired per [`HARDWARE.md`](HARDWARE.md). You can do the whole
-tutorial with **one** board and stop before step 6 — you will just not have a game
+tutorial with **one** board and stop before step 7 — you will just not have a game
 to play, because whack-a-mole needs somewhere to move to.
 
 ---
@@ -35,11 +35,13 @@ If `cargo` is missing, install Rust from <https://rustup.rs>.
 
 ## 2. Wire the first module
 
-Follow [`HARDWARE.md`](HARDWARE.md). Button between **GPIO33** and **3V3**; LED
-from **GPIO26** through a resistor to **GND**.
+Follow [`HARDWARE.md`](HARDWARE.md) — it has the diagram, the parts list and the
+two mistakes that fail *silently*. In short: button between **GPIO33** and
+**3V3**, LED from **GPIO26** through a resistor to **GND**.
 
-**Observe:** nothing yet — but check the wiring against the diagram now, because
-step 5 is much harder to debug if this is wrong.
+**Observe:** nothing yet — this is the one step you cannot check on its own. Step
+5 checks it for you as soon as there is firmware on the board, so if you are
+unsure about a connection, carry on rather than agonising here.
 
 ---
 
@@ -100,15 +102,60 @@ Leave the monitor open for the next step. `Ctrl+]` exits it.
 - `ls /dev/tty.*` (macOS) or `ls /dev/ttyUSB*` (Linux) should list a new device
   when the board is plugged in.
 - Some boards need the **BOOT** button held while connecting.
+- This is the *flashing* connection, unrelated to the button and LED you wired —
+  those get checked in step 5.
 - Linux: you may need to be in the `dialout` group.
 </details>
 
 ---
 
-## 5. Confirm it is advertising
+## 5. Check your wiring
 
-**Do not skip this.** It is the checkpoint that separates "firmware problem" from
-"host problem" for every failure after it.
+The firmware runs a self-test at boot, before any BLE. Watch the serial monitor
+from the previous step:
+
+```
+modit button module, id "a", on esp32
+self-test: blinking the LED three times (GPIO26)
+self-test: button (GPIO33) reads low at rest, as expected
+self-test: press the button now -- you should see a line for each press
+```
+
+**Observe two things:**
+
+1. **The LED blinks three times.** If it does not, the LED is reversed (its long
+   leg must face the resistor and GPIO26), the resistor is not connected, or it is
+   on the wrong pin. Nothing else in this tutorial will light it either.
+2. **Press the button.** Each press prints a line:
+
+   ```
+   button pressed, but no client is subscribed
+   ```
+
+   That message is correct at this stage — the board is working and nothing is
+   listening yet.
+
+If instead the self-test says
+
+```
+self-test: WARNING -- button (GPIO33) reads HIGH at rest. If you are not holding
+it, it is wired to GND; it should go to 3V3.
+```
+
+the button is wired the wrong way round. The pin has an internal pull-down, so it
+must be pulled *up* to 3V3 by the button. Wired to GND it reads low forever and no
+press is ever detected.
+
+**Both boxes ticked means your hardware is finished.** Everything from here is
+software, which is a much better place to be debugging.
+
+---
+
+## 6. Confirm it is advertising
+
+**Do not skip this.** Step 5 proved the board's hardware; this proves its radio.
+Together they separate "board problem" from "host problem" for every failure after
+this point.
 
 Use any BLE scanner — *nRF Connect* or *LightBlue* on a phone, or `bluetoothctl`
 with `scan on` on Linux.
@@ -118,9 +165,14 @@ with `scan on` on Linux.
 If it is missing, the problem is on the board, and the serial monitor from step 4
 will say why. If it is present, everything from here is host-side.
 
+While the scanner is open you can also **write `01` to the LED characteristic**
+(`927312e0-2354-11eb-9f10-fbc30a62cf30`) — the LED should light, and `00` should
+turn it off. That exercises the write path and the UUIDs end to end, before
+`brain` is anywhere in the picture.
+
 ---
 
-## 6. Flash the second module
+## 7. Flash the second module
 
 Disconnect the first board, connect the second:
 
@@ -128,12 +180,13 @@ Disconnect the first board, connect the second:
 just flash b
 ```
 
-**Observe:** the monitor prints `id "b"`, and a scan now shows both
-`modit-button-a` and `modit-button-b`.
+**Observe:** the monitor prints `id "b"`, its self-test blinks and reports the
+button as in step 5, and a scan now shows both `modit-button-a` and
+`modit-button-b`.
 
 ---
 
-## 7. Power both modules
+## 8. Power both modules
 
 Both boards need power but not a laptop — any USB charger or battery pack works.
 
@@ -141,7 +194,7 @@ Both boards need power but not a laptop — any USB charger or battery pack work
 
 ---
 
-## 8. Run the brain
+## 9. Run the brain
 
 ```sh
 just brain
@@ -173,7 +226,7 @@ resets as soon as everything binds.
 
 ---
 
-## 9. Play
+## 10. Play
 
 One LED lights. Press **that** module's button.
 
@@ -201,7 +254,7 @@ Set `RUST_LOG` for more or less:
 
 ---
 
-## 10. Write your own scenario
+## 11. Write your own scenario
 
 The game lives in `main()` in
 [`crates/brain/src/main.rs`](../crates/brain/src/main.rs). To change the rules,
@@ -230,6 +283,9 @@ Keyed by what you actually see.
 | `waiting for N module(s)` forever | that board is off, out of range, or flashed with a different id | the message names the expected board, e.g. `modit-button-b` |
 | `is a modit device but no module in this scenario expects it` | board flashed with an id the scenario does not list | reflash with the right id, or add it to `modules` in `main.rs` |
 | `advertises the right name but does not expose the characteristics` | board running older firmware | reflash it |
+| Self-test does not blink the LED | LED reversed, resistor missing, or wrong pin | long leg towards the resistor and GPIO26; see [`HARDWARE.md`](HARDWARE.md) |
+| Self-test warns the button reads HIGH at rest | button wired to GND instead of 3V3 | the pin has a pull-down and must be pulled up; see [`HARDWARE.md`](HARDWARE.md) |
+| Self-test passes but presses print nothing | button not actually closing the circuit, or wrong pin | check continuity across the switch while pressed |
 | Button press does nothing | wiring, or the brain is not subscribed | the serial monitor prints `button pressed, notifying` on every press — that isolates it to one side or the other |
 | Serial monitor prints `button pressed, but no client is subscribed` | the board is fine; the brain has not bound it | see the brain's own log |
 | LED never lights | wiring or LED polarity | `RUST_LOG=brain=trace` shows the write going out; if it does, it is the wiring |

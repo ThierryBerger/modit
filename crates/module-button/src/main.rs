@@ -36,6 +36,7 @@ use esp_alloc as _;
 use esp_backtrace as _;
 use esp_hal::{
     clock::CpuClock,
+    delay::Delay,
     gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull},
     main,
     rng::Rng,
@@ -80,6 +81,36 @@ fn custom_halt() -> ! {
     esp_hal::system::software_reset()
 }
 
+/// Blink the LED and report the button, so wiring can be checked the moment the
+/// board is flashed.
+///
+/// Without this, a reversed LED or a button wired to GND instead of 3V3 is not
+/// noticed until the whole system is running, several steps later, where it looks
+/// like a BLE problem. Costs about a second at boot.
+fn self_test(led: &mut Output<'_>, button: &Input<'_>) {
+    let delay = Delay::new();
+
+    println!("self-test: blinking the LED three times (GPIO26)");
+    for _ in 0..3 {
+        led.set_high();
+        delay.delay_millis(150);
+        led.set_low();
+        delay.delay_millis(150);
+    }
+
+    // The pin has a pull-down, so it idles low. Reading high here means the
+    // button is either held or -- much more likely -- wired to GND.
+    if button.is_high() {
+        println!(
+            "self-test: WARNING -- button (GPIO33) reads HIGH at rest. If you are \
+             not holding it, it is wired to GND; it should go to 3V3."
+        );
+    } else {
+        println!("self-test: button (GPIO33) reads low at rest, as expected");
+    }
+    println!("self-test: press the button now -- you should see a line for each press");
+}
+
 #[main]
 fn main() -> ! {
     esp_println::logger::init_logger_from_env();
@@ -112,6 +143,8 @@ fn main() -> ! {
 
     let mut bluetooth = peripherals.BT;
     let mut led = Output::new(peripherals.GPIO26, Level::Low, OutputConfig::default());
+
+    self_test(&mut led, &button);
 
     let now = || time::Instant::now().duration_since_epoch().as_millis();
     loop {

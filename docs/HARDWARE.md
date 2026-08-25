@@ -43,13 +43,23 @@ Defined in [`crates/module-button/src/main.rs`](../crates/module-button/src/main
    +---------+
 ```
 
-Two things that catch people out:
+### Checking it
+
+You do not have to eyeball this. The firmware runs a **self-test at boot**, before
+any BLE: it blinks the LED three times and reports whether the button pin reads
+low at rest. Flash the board and watch `just monitor` — step 5 of the
+[tutorial](TUTORIAL.md) walks through what you should see.
+
+### Two things that catch people out
 
 - **The button goes to 3V3, not GND.** The pin is configured with a pull-down, so
   it idles low and pressing pulls it *up*. Wiring the button to GND gives a pin
   that is always low and a module that never notifies.
 - **The LED's long leg (anode) faces the resistor / GPIO26.** Backwards, it simply
   never lights, with no other symptom.
+
+Both of these used to be invisible until the whole system was running, where they
+looked like BLE problems. The self-test catches each of them directly.
 
 ## Choosing different pins
 
