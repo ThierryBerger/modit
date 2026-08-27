@@ -171,6 +171,18 @@ No git remote is configured, so `.github/workflows/ci.yml` has never executed.
 
 ---
 
+## ⚪ 9. Power draw is unmeasured
+
+[Plan 10](plans/todo/10-power-and-battery.md) is new and independent of everything
+else. It needs one board and a USB power meter, nothing more.
+
+- [ ] Measure average current: advertising unconnected, connected idle, connected
+      with presses.
+- [ ] Do the battery arithmetic for the pack you intend to use.
+- [ ] **If a day of sessions plus an overnight charge is the real requirement, the
+      current firmware may already meet it.** Recording that and closing the plan
+      is a good outcome, not a cop-out.
+
 ## Where things stand
 
 | | |
@@ -180,6 +192,6 @@ No git remote is configured, so `.github/workflows/ci.yml` has never executed.
 | `just ci` | green locally |
 | Plans done | 01, 02, 03, 05, 07 |
 | Plans awaiting hardware | 04, 06, 08 (in `plans/doing/`) |
-| Plans left | 09 — designed, not built |
+| Plans left | 09 — designed, not built · 10 — power, starts with a measurement |
 
 Nothing here is a known bug. It is all "I wrote this and could not watch it work".

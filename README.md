@@ -5,12 +5,31 @@ through a "central" bluetooth client (brain).
 
 This uses bluetooth (LE) as a communication protocol, for the following advantages:
 
-- Doesn't need wifi available.
-  - Simpler to setup
-  - Setting this up outside is possible
-- Doesn't need wiring together, modules can be fairly far away from each other.
-- doesn't draw a lot of power, so battery-friendly, for portable setups.
-- A single "brain" as a client, higher level code a user tweaks to its needs, communicating with modules.
+- **No network infrastructure.** No venue wifi, no router, no internet. Power a
+  module and it is reachable. Setting this up outdoors is possible.
+- **No wiring between modules.** They only need power.
+- **Low energy per message, and low idle draw**, which is what makes
+  battery-powered modules plausible.
+- **A single "brain" as a client**, running higher level code a user tweaks to
+  their needs.
+
+### Honest limits
+
+BLE is not free of trade-offs, and it is better to know them up front than to
+discover them mid-build:
+
+- **Range** is realistically around 10 m indoors, less through walls. Modules
+  spread across several rooms may not all reach one brain.
+- **Simultaneous connections** are capped by whatever BLE stack the brain runs on
+  — typically single digits to low double digits, with throughput degrading before
+  the cap. Fine for a handful of modules; a 15-prop room needs thinking about.
+- **Battery life depends far more on the firmware than on the radio.** The
+  current firmware never sleeps, so it does not yet collect most of BLE's power
+  advantage. See [plan 10](plans/todo/10-power-and-battery.md), which starts by
+  measuring rather than assuming.
+- **A module that can be commanded cannot sleep deeply**, because it has to stay
+  reachable. That is a consequence of being bidirectional, not of BLE — a
+  notify-only sensor can be dramatically lower-power than one with an actuator.
 
 ## Target audience
 

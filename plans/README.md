@@ -41,6 +41,7 @@ Every plan carries these sections so that future-you can re-enter it cold:
 | 07 | [Make module definitions real](done/07-typed-module-definitions.md) | easy to get into | M | ✅ done |
 | 08 | [The tutorial](doing/08-tutorial.md) | easy to get into | M | 🔨 written, **never walked** |
 | 09 | [A seam to write scenarios against](todo/09-scenario-seam.md) | easy to get into | L | designed, not built |
+| 10 | [Earn the battery life BLE was chosen for](todo/10-power-and-battery.md) | modules run on batteries | M | todo — **starts with a measurement** |
 
 ### Pick this up first
 
@@ -54,6 +55,10 @@ implementation is left. It absorbs the two items plan 04 could not do:
 per-module recovery, and `--simulate` — the latter being the single most valuable
 thing here for picking the project up again, since it makes scenarios testable
 with no hardware at all.
+
+Plan 10 is independent of the rest and needs only one board and a USB power
+meter. Its first step may conclude "the current firmware already meets the
+requirement", which is a real outcome — do not skip straight to optimising.
 
 Decisions settled in this pass, so they do not get relitigated:
 
