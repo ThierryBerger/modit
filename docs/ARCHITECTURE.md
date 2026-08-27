@@ -88,10 +88,18 @@ per-module is [plan 09](../plans/todo/09-scenario-seam.md).
 
 ## Known rough edges
 
-Game rules and BLE plumbing are interleaved in `brain`'s `main()`. There is no
-seam to write a scenario against, and no way to run one without hardware. Both
-are [plan 09](../plans/todo/09-scenario-seam.md), the largest outstanding piece
-of work.
+**Game rules and BLE plumbing are interleaved** in `brain`'s `main()`. There is no
+seam to write a scenario against, and no way to run one without hardware —
+[plan 09](../plans/todo/09-scenario-seam.md).
+
+**The protocol lives in the UUIDs rather than in a type.** A module type *is* a
+set of UUIDs, so adding one means minting UUIDs and hardcoding them on both sides,
+and a prop with more than one input or output cannot be represented at all. The
+drift test described above exists because there is no shared definition to compare
+against — [plan 11](../plans/todo/11-message-protocol.md) replaces it with typed
+`Command`/`Event` messages in `shared`.
+
+Those two are the same seam from opposite sides and are best done together.
 
 See [`plans/AUDIT.md`](../plans/AUDIT.md) for everything else that is known and
 unfixed.

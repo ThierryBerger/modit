@@ -58,6 +58,12 @@ Key properties:
   ignore or handle — it does not abort the process (plan 04).
 - The scenario is testable against a fake `Modules` with no radio.
 
+> **Read [plan 11](11-message-protocol.md) first.** It replaces UUID-as-protocol
+> with typed messages in `shared`, and its `Link` trait is this plan's seam seen
+> one layer lower. The two are best done together — 11 changes the primitive
+> below from `next_press` to `next_event`. Doing 09 alone means designing the
+> scenario API around press-shaped calls and then generalising it.
+
 ## Design work done 2026-08-25 (not implemented)
 
 The plan says to answer the open questions by writing two different scenarios on
@@ -89,6 +95,18 @@ async fn next_press(&self, timeout: Duration) -> Result<ModuleId, WaitError>;
 and `module.wait_for_press(timeout)` becomes a thin filter over it. Both scenarios
 fall out of that; neither falls out of the other order.
 
+**Updated 2026-08-27, after plan 11:** the same argument applies one level up.
+With a message protocol the primitive is
+
+```rust
+async fn next_event(&self, timeout: Duration) -> Result<(ModuleId, Event), WaitError>;
+```
+
+and `next_press` becomes a filter over *that*. A press is one `Event` variant; a
+sensor reading is another. Building `next_press` as the primitive would have to be
+widened the moment a module type reports anything other than a press — which is
+the same mistake as building `wait_for_press`, one layer out.
+
 **Both scenarios need `Modules` as a set, not a Vec of handles.** Whack-a-mole
 picks a random one; Simon Says builds a sequence. Both want "all modules with role
 `button`" and stable ids, not indices.
@@ -103,6 +121,7 @@ code expresses.
 | What happens to a scenario when a module is lost? | Return `Err(WaitError::ModuleLost(id))` from the awaiting call. Do not suspend, do not abort the process. | The two scenarios want different things — whack-a-mole can carry on with the rest, Simon Says must end the round. Only the scenario knows. A helper for "wait until it comes back" covers the third case. |
 | One scenario or several concurrent? | One, for now. `run(scenario)` takes the whole module set. | Several needs disjoint ownership, which is a real design in itself. Nothing today wants it, and the single-scenario API is a strict subset. |
 | Does the runtime own the event loop, or the scenario? | The runtime. `modit::run(modules, scenario).await`. | The runtime already has to own acquisition, reconnection and the notification streams. Handing the loop to the scenario means handing it all of that too. |
+| Where does the transport go? | Behind a `Link` trait *below* the runtime — see [plan 11](11-message-protocol.md). | The runtime deals in `(ModuleId, Event)`; whether those arrive over BLE, an in-process channel (`--simulate`), or ESP-NOW later is not its concern. |
 | Trait, or an async fn taking `&Modules`? | An async fn. | Neither scenario needs a lifecycle hook, so a trait would be ceremony. It can become one later without changing call sites. |
 
 ## Original open questions
@@ -173,3 +192,7 @@ Two items were moved here from plan 04 because they need this seam:
    up — it makes scenarios testable on a laptop with no boards in the bag, and it
    gives the tutorial a step 0. It only becomes possible once the runtime is
    behind a trait.
+
+   With [plan 11](11-message-protocol.md) done, this is close to free: `--simulate`
+   is a `Link` impl over an in-process channel carrying the same `Command`/`Event`
+   enums the radio would carry.

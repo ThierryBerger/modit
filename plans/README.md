@@ -42,6 +42,7 @@ Every plan carries these sections so that future-you can re-enter it cold:
 | 08 | [The tutorial](doing/08-tutorial.md) | easy to get into | M | 🔨 written, **never walked** |
 | 09 | [A seam to write scenarios against](todo/09-scenario-seam.md) | easy to get into | L | designed, not built |
 | 10 | [Earn the battery life BLE was chosen for](todo/10-power-and-battery.md) | modules run on batteries | M | todo — **starts with a measurement** |
+| 11 | [Put the protocol in `shared`, not in the UUIDs](todo/11-message-protocol.md) | scales past one module type | L | todo — **do with 09** |
 
 ### Pick this up first
 
@@ -50,11 +51,17 @@ Three plans are sitting in `doing/` waiting on hardware, and one of them (04)
 rewrote the round from a poll loop into an event loop — the largest behavioural
 change in the project, never run against a real module.
 
-Then **plan 09**. Its design questions are answered (in the plan); only the
-implementation is left. It absorbs the two items plan 04 could not do:
-per-module recovery, and `--simulate` — the latter being the single most valuable
-thing here for picking the project up again, since it makes scenarios testable
-with no hardware at all.
+Then **plans 09 and 11 together.** They are the same seam from two sides: 11 puts
+the protocol in `shared` as typed messages and defines a `Link` trait for the
+transport; 09 puts the scenario above the runtime. Doing 09 alone means designing
+the scenario API around press-shaped calls and generalising it later. Between
+them they absorb the two items plan 04 could not do — per-module recovery, and
+`--simulate`, which is the single most valuable thing here for picking the project
+up again, since it makes scenarios testable with no hardware at all.
+
+**Step 1 of plan 11 is safe to start any time** — a pure addition to `shared`
+with host-only tests, nothing else touched. The firmware steps should wait until
+`CHECKME.md` is clear.
 
 Plan 10 is independent of the rest and needs only one board and a USB power
 meter. Its first step may conclude "the current firmware already meets the
