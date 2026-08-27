@@ -27,3 +27,5 @@ edition = "2024"
 shared = { path = "crates/shared" }
 anyhow = "1.0.98"
 log = "0.4"
+# no_std, no alloc: `to_slice` / `from_bytes` over caller-owned buffers.
+postcard = { version = "1", default-features = false }

@@ -6,6 +6,8 @@
 
 #![cfg_attr(not(test), no_std)]
 
+pub mod proto;
+
 use serde_derive::{Deserialize, Serialize};
 
 /// The BLE UUIDs every modit module speaks.
