@@ -26,6 +26,11 @@ check-firmware:
 brain *ARGS:
     RUST_LOG=${RUST_LOG:-info} cargo run -p brain -- {{ARGS}}
 
+# Run a scenario with no radio and no boards. Presses come from the keyboard.
+# Try `just simulate --scenario simon`.
+simulate *ARGS:
+    RUST_LOG=${RUST_LOG:-info} cargo run -p brain -- --simulate {{ARGS}}
+
 # Build, flash and monitor the firmware for ONE board.
 #
 # The id distinguishes this board from the others and is baked into the binary,

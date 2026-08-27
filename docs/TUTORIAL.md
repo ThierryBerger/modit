@@ -6,7 +6,7 @@ to one step instead of discovered at the end.
 
 Allow about an hour the first time, most of it waiting for `espup install`.
 
-> **Status:** the host-side steps (1, 3, 9) have been run as written. The steps
+> **Status:** the host-side steps (0, 1, 3, 9) have been run as written. The steps
 > involving a board have not yet been walked through end to end — see
 > [`CHECKME.md`](../CHECKME.md). If something here is wrong, that is a bug in this
 > file; please fix it as you go.
@@ -16,6 +16,31 @@ Allow about an hour the first time, most of it waiting for `espup install`.
 Two ESP32 modules, wired per [`HARDWARE.md`](HARDWARE.md). You can do the whole
 tutorial with **one** board and stop before step 7 — you will just not have a game
 to play, because whack-a-mole needs somewhere to move to.
+
+---
+
+## 0. Play it without any hardware
+
+Before buying anything, you can run the whole thing:
+
+```sh
+just simulate
+```
+
+Presses come from the keyboard instead of a radio — type a module id and press
+enter. `-a` makes a module drop out, so you can watch the brain recover.
+
+```
+ INFO  brain::runtime   > all 2 module(s) bound, starting the scenario
+ INFO  brain::link::sim > [sim] a output 0 -> ON
+ INFO  brain::scenarios > module a is lit
+ INFO  brain::scenarios > module a hit
+```
+
+`just simulate --scenario simon` runs Simon Says instead.
+
+**Observe:** a module lights, pressing it moves the light. That is the same
+scenario code the real boards run — only the transport differs.
 
 ---
 
@@ -261,11 +286,24 @@ The game lives in `main()` in
 edit it: the module handles give you `write::write(...)` for the LED and a
 notification stream per module for presses.
 
-Be aware that BLE plumbing and game rules are still interleaved in that function.
-Separating them into a runtime and a scenario is
-[plan 09](../plans/todo/09-scenario-seam.md) and has not been done — so today,
-writing a scenario does mean reading some btleplug. Adjust your expectations
-accordingly, and consider doing plan 09 first if you plan to write several.
+A scenario is an `async fn` taking `&Modules`. It never mentions BLE, a
+peripheral or a task:
+
+```rust
+pub async fn my_game(modules: Arc<Modules>) -> anyhow::Result<()> {
+    let ids = modules.ids().to_vec();
+    modules.set_output(&ids[0], 0, true).await?;      // light one
+    modules.wait_for_press(&ids[0], TIMEOUT).await?;  // wait for that one
+    let (who, event) = modules.next_event(TIMEOUT).await?;  // or any of them
+    Ok(())
+}
+```
+
+Add it to the `match` in `main.rs` and run it with
+`just simulate --scenario <name>` — no hardware needed to develop it.
+
+[`scenarios.rs`](../crates/brain/src/scenarios.rs) has two worked examples:
+whack-a-mole, and Simon Says, which is deliberately structured differently.
 
 ---
 
@@ -292,6 +330,5 @@ Keyed by what you actually see.
 
 ## Running without hardware
 
-Not possible yet. A `--simulate` backend is the highest-value missing piece for
-picking this project back up on a train, and is part of
-[plan 09](../plans/todo/09-scenario-seam.md).
+`just simulate` — see step 0. Scenario logic, the runtime and the protocol
+messages are all exercised; only the radio is replaced.

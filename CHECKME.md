@@ -190,8 +190,14 @@ else. It needs one board and a USB power meter, nothing more.
 | Branch | `cleanup` — 8 commits, not merged |
 | Tests | 13, all passing, no hardware needed |
 | `just ci` | green locally |
-| Plans done | 01, 02, 03, 05, 07 |
+| Plans done | 01, 02, 03, 05, 07 · 09 and 11 step 1 built and tested |
 | Plans awaiting hardware | 04, 06, 08 (in `plans/doing/`) |
-| Plans left | 09 — designed, not built · 10 — power, starts with a measurement |
+| Plans left | 09's last piece (per-module recovery) · 11 steps 2-4 (firmware) · 10 — power |
 
 Nothing here is a known bug. It is all "I wrote this and could not watch it work".
+
+**One part of the project is now genuinely tested**: the scenario layer runs
+under `just simulate` and in 8 automated tests, so game logic no longer depends
+on a board to verify. The BLE path below it is still unwatched — `link/ble.rs`
+is deliberately a thin wrapper over the unchanged `ble/` code so that this pass
+did not add risk there.

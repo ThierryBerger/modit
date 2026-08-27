@@ -72,25 +72,57 @@ literals are therefore duplicated, and a host-side test
 This is the mechanism that replaced the old `assets/` files, which drifted
 silently.
 
+## The layers
+
+```
+scenarios.rs   game rules      async fn(&Modules) -- no BLE types at all
+runtime.rs     the runtime     owns the link, pumps events, hands out `Modules`
+link/          the transport   Link trait: ble.rs (real) or sim.rs (no radio)
+ble/           BLE plumbing    scanning, connecting, notification streams
+```
+
+A scenario never mentions a peripheral, a characteristic or a task. `Modules` is
+concrete rather than generic over the transport: one task owns the link and
+communicates over channels, so no type parameter leaks into scenario code.
+
+### The three waiting primitives
+
+```rust
+next_event(timeout)          -> (ModuleId, Event)   // everything
+next_press(timeout)          -> (ModuleId, u8)      // any module, presses only
+wait_for_press(id, timeout)  -> u8                  // one module
+```
+
+Each is a filter over the one above. That order matters: a scenario needing "the
+next press, whichever module" — Simon Says — cannot be built from a per-module
+wait, while the per-module wait is trivially built from it.
+
+Prefer `next_press` to hand-filtering `next_event`. An ignore arm in a `match`
+still consumes the caller's loop iteration, which is a real bug that shipped
+briefly here.
+
+### Running without hardware
+
+`just simulate` swaps `link/ble.rs` for `link/sim.rs` — in-process channels
+carrying the same messages. Scenario, runtime and protocol are all the real ones.
+It is also the test harness: the scenario tests in `scenarios_tests.rs` drive it
+programmatically.
+
 ## The round
 
 1. **Validate** — parse every UUID, reject duplicate ids. Before the radio is
    touched, so a typo is reported as a typo.
 2. **Acquire** — scan, connect, bind every module by name. Retries with backoff
    (3s → 30s), never fatal.
-3. **Run** — one watcher task per module, each holding that module's notification
-   stream for the whole round and selecting over `{notification, round aborted,
-   liveness tick}`.
+3. **Run** — the scenario, over held notification streams.
 
-Any failure ends the round and returns to step 2. Recovery is therefore *coarse*:
-one wobbly board interrupts the whole game rather than just itself. Making it
-per-module is [plan 09](../plans/todo/09-scenario-seam.md).
+A lost module surfaces to the scenario as `WaitError::ModuleLost`, and the
+scenario decides: whack-a-mole carries on if it was not the lit one, Simon Says
+always ends the round. But the runtime does not yet re-acquire a lost module in
+the background, so recovery is still *coarse* — see
+[plan 09](../plans/doing/09-scenario-seam.md).
 
 ## Known rough edges
-
-**Game rules and BLE plumbing are interleaved** in `brain`'s `main()`. There is no
-seam to write a scenario against, and no way to run one without hardware —
-[plan 09](../plans/todo/09-scenario-seam.md).
 
 **The protocol lives in the UUIDs rather than in a type.** A module type *is* a
 set of UUIDs, so adding one means minting UUIDs and hardcoding them on both sides,

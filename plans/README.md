@@ -40,9 +40,9 @@ Every plan carries these sections so that future-you can re-enter it cold:
 | 06 | [Make the firmware fail loudly](doing/06-firmware-hardening.md) | fail-free + errors | S | 🔨 code done, **needs a board** |
 | 07 | [Make module definitions real](done/07-typed-module-definitions.md) | easy to get into | M | ✅ done |
 | 08 | [The tutorial](doing/08-tutorial.md) | easy to get into | M | 🔨 written, **never walked** |
-| 09 | [A seam to write scenarios against](todo/09-scenario-seam.md) | easy to get into | L | designed, not built |
+| 09 | [A seam to write scenarios against](doing/09-scenario-seam.md) | easy to get into | L | 🔨 built + tested; per-module recovery left |
 | 10 | [Earn the battery life BLE was chosen for](todo/10-power-and-battery.md) | modules run on batteries | M | todo — **starts with a measurement** |
-| 11 | [Put the protocol in `shared`, not in the UUIDs](todo/11-message-protocol.md) | scales past one module type | L | todo — **do with 09** |
+| 11 | [Put the protocol in `shared`, not in the UUIDs](doing/11-message-protocol.md) | scales past one module type | L | 🔨 step 1 done; steps 2-4 need a board |
 
 ### Pick this up first
 
@@ -51,17 +51,19 @@ Three plans are sitting in `doing/` waiting on hardware, and one of them (04)
 rewrote the round from a poll loop into an event loop — the largest behavioural
 change in the project, never run against a real module.
 
-Then **plans 09 and 11 together.** They are the same seam from two sides: 11 puts
-the protocol in `shared` as typed messages and defines a `Link` trait for the
-transport; 09 puts the scenario above the runtime. Doing 09 alone means designing
-the scenario API around press-shaped calls and generalising it later. Between
-them they absorb the two items plan 04 could not do — per-module recovery, and
-`--simulate`, which is the single most valuable thing here for picking the project
-up again, since it makes scenarios testable with no hardware at all.
+**`just simulate` runs the whole game with no hardware** — that is the fastest way
+back into this project, and it is also the test harness.
 
-**Step 1 of plan 11 is safe to start any time** — a pure addition to `shared`
-with host-only tests, nothing else touched. The firmware steps should wait until
-`CHECKME.md` is clear.
+What is left, in order:
+
+1. **Hardware verification** (`CHECKME.md`) — three plans wait on it.
+2. **Plan 11 steps 2–4**: move the firmware onto the real `Command`/`Event`
+   messages. Step 1 (the types) is done and tested; the firmware half needs a
+   board, so it waits for 1.
+3. **Plan 09's last piece**: per-module demotion and background re-acquisition.
+   `WaitError::ModuleLost` exists and scenarios already choose how to react; the
+   runtime just does not bring a lost module back yet.
+4. **Plan 10**: one measurement, which may close it.
 
 Plan 10 is independent of the rest and needs only one board and a USB power
 meter. Its first step may conclude "the current firmware already meets the

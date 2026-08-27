@@ -13,3 +13,8 @@ btleplug = "0.11.8"
 futures = "0.3.31"
 pretty_env_logger = "0.5.0"
 rand = { version = "0.9", features = ["small_rng", "os_rng"], default-features = false }
+
+[dev-dependencies]
+# `start_paused` for the scenario tests: virtual time, so they neither take real
+# seconds nor go flaky when the machine is loaded.
+tokio = { version = "1", features = ["full", "test-util"] }

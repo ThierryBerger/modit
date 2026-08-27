@@ -140,20 +140,20 @@ code expresses.
 
 - [x] Answer the open questions above. **Done 2026-08-25 — see the section at the
       top. Implementation not started.**
-- [ ] Build `next_press(set, timeout)` as the primitive **first**, then express
+- [x] Build `next_press(set, timeout)` as the primitive **first**, then express
       `wait_for_press(module, timeout)` in terms of it. Doing it the other way
       round means rewriting every scenario.
-- [ ] Extract BLE plumbing from `brain/src/main.rs` into `crates/modit` (or a `lib.rs`
+- [x] Extract BLE plumbing from `brain/src/main.rs` into `crates/modit` (or a `lib.rs`
       in `brain` — a separate crate only if a second binary appears).
-- [ ] Define the module handle API: `led().on()/.off()`, `wait_for_press(timeout)`,
+- [x] Define the module handle API: `led().on()/.off()`, `wait_for_press(timeout)`,
       `is_connected()`.
-- [ ] Reduce `brain/src/main.rs` to scenario code only.
-- [ ] Add a fake/simulated backend so scenarios run with no hardware, driven by
-      keyboard input. Feeds the tutorial's step 0 (plan 08).
-- [ ] Write a second scenario (Simon Says) as a real test of the abstraction. If it
+- [x] Reduce `brain/src/main.rs` to scenario code only.
+- [x] Add a fake/simulated backend so scenarios run with no hardware, driven by
+      keyboard input. Feeds the tutorial's step 0 (plan 08). **Done: `just simulate`.**
+- [x] Write a second scenario (Simon Says) as a real test of the abstraction. If it
       needs runtime changes, the seam is in the wrong place — that is the point of
       writing it.
-- [ ] Document the seam in `ARCHITECTURE.md`.
+- [x] Document the seam in `ARCHITECTURE.md`.
 
 ## Done when
 
@@ -162,6 +162,112 @@ code expresses.
 - A scenario runs end to end against the simulated backend with no boards attached.
 
 ## Notes
+
+### Implemented 2026-08-28
+
+Built, and — unusually for this project — **actually verified**, because the
+plan's own deliverable is a test harness.
+
+#### Shape
+
+```
+scenarios.rs        whack_a_mole, simon_says -- plain async fns over &Modules
+runtime.rs          Modules handle, run(), WaitError, require()
+link/mod.rs         Link / LinkTx / LinkRx traits, ModuleId, ModuleEvent
+link/ble.rs         thin wrapper over the existing ble/ code
+link/sim.rs         in-process channels: --simulate, and the test harness
+ble/                UNCHANGED
+```
+
+`Modules` is deliberately **not** generic over the transport. One task owns the
+link and communicates over channels, so a scenario signature never mentions BLE,
+`Link`, or a type parameter. `Link` splits into `Tx` (cloneable, shared) and `Rx`
+(owned, mutable) so both can sit in one `select!` without borrowing the same
+value.
+
+#### Simon Says needed no runtime changes
+
+That was the plan's stated test of whether the seam is in the right place, and it
+passed: `simon_says` is structurally unlike whack-a-mole — it waits on *any*
+module and checks which arrived, and a wrong press ends the round rather than
+being ignored — and it compiled against the API as designed.
+
+#### The bug that a flaky test found
+
+Worth recording, because the lesson is not about the bug.
+
+`simon_says` originally filtered events by hand:
+
+```rust
+for (step, expected) in sequence.iter().enumerate() {
+    match modules.next_event(PATIENCE).await {
+        Ok((who, Event::Pressed{..})) if &who == expected => { /* correct */ }
+        Ok((who, Event::Pressed{..})) => { /* wrong, end round */ }
+        Ok((from, other)) => { debug!("ignoring {other:?}"); }   // <-- bug
+        ...
+    }
+}
+```
+
+The ignore arm **consumes the loop iteration**. Every module sends `Hello` on
+connect, so a queued `Hello` silently satisfied a step without anybody pressing
+anything. The test failed roughly 40% of the time depending on whether the
+Hellos were drained before the loop started.
+
+The fix was not an inner loop in the scenario. It was to add the filtered
+primitive the design section above already called for:
+
+```rust
+next_event(timeout)  -> (ModuleId, Event)   // the primitive
+next_press(timeout)  -> (ModuleId, u8)      // filter: any module, presses only
+wait_for_press(id, timeout) -> u8           // filter: one module
+```
+
+`wait_for_press` is now written in terms of `next_press`, which is written in
+terms of `next_event`. Hand-filtering is still possible but no longer the obvious
+path, and the doc comment on `next_press` says why.
+
+**This is the argument for `--simulate` in one story.** The bug is invisible by
+inspection, would have shown up on hardware as "Simon Says sometimes skips a
+step", and was diagnosed in minutes because the scenario runs in a test.
+
+#### Making the tests non-flaky
+
+Two separate fixes, in order:
+
+1. **Virtual time.** `#[tokio::test(start_paused = true)]` (needs tokio's
+   `test-util`, added as a dev-dependency) makes `tokio::time` virtual, so the
+   scenario's real sleeps cost nothing and the tests do not depend on wall clock.
+   Runtime went 2.51s → 0.01s.
+2. **Assert on history, not on transient state.** One test polled for the
+   game-over blink — a 150 ms window. Whether a poll catches a blink depends on
+   scheduling, which is a flaky test by construction. `SimHandle` now records
+   every command, and tests assert on that log instead.
+
+Neither of those fixed the real bug; they made it *visible* rather than
+intermittent. Verified with **60 consecutive full test runs, zero failures**,
+after 18/40 failures before.
+
+#### Verified
+
+- 26 tests, 17 of them in `brain`, including 8 scenario tests.
+- Mutation check: breaking the "is it the right module" logic fails 3 tests.
+- `just simulate` plays a full game from the keyboard, including `-a` to drop a
+  module and watch the runtime recover.
+- `just simulate --scenario simon` plays Simon Says.
+- Clippy clean under `-D warnings`.
+
+#### Still not done
+
+**Per-module demotion and background re-acquisition.** `WaitError::ModuleLost`
+exists and scenarios choose how to react — whack-a-mole carries on if the lost
+module was not the lit one, Simon Says always ends the round — which is the
+scenario-facing half. The runtime half is not built: a lost module is not
+re-acquired in the background, so a scenario that keeps playing may later try to
+light a module that is gone, ending the round. Recovery is still coarse.
+
+That wants a supervisor owning module handles that can be temporarily absent.
+It is the last piece of this plan.
 
 ### Why implementation was deliberately deferred (2026-08-25)
 
