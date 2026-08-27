@@ -37,7 +37,13 @@ enter. `-a` makes a module drop out, so you can watch the brain recover.
  INFO  brain::scenarios > module a hit
 ```
 
-`just simulate --scenario simon` runs Simon Says instead.
+Three scenarios ship as worked examples:
+
+| `--scenario` | Game |
+| ------------ | ---- |
+| `whack` (default) | One lights at random; press it; another lights. Forever. |
+| `simon` | Repeat a growing sequence from memory. A mistake ends the round. |
+| `speedrun` | 10 timed laps alternating between modules, with every split reported. |
 
 **Observe:** a module lights, pressing it moves the light. That is the same
 scenario code the real boards run — only the transport differs.
@@ -302,8 +308,16 @@ pub async fn my_game(modules: Arc<Modules>) -> anyhow::Result<()> {
 Add it to the `match` in `main.rs` and run it with
 `just simulate --scenario <name>` — no hardware needed to develop it.
 
-[`scenarios.rs`](../crates/brain/src/scenarios.rs) has two worked examples:
-whack-a-mole, and Simon Says, which is deliberately structured differently.
+[`scenarios.rs`](../crates/brain/src/scenarios.rs) has three worked examples,
+deliberately different from one another:
+
+| Scenario | Waits with | Wrong press | Ends |
+| -------- | ---------- | ----------- | ---- |
+| `whack_a_mole` | `wait_for_press` on one module | ignored | never |
+| `simon_says` | `next_press` on any module | ends the round | on a mistake |
+| `speedrun` | `next_press` on any module | counted as a miss | after 10 laps |
+
+Copy whichever waits the way yours needs to.
 
 ---
 

@@ -139,6 +139,72 @@ impl Modules {
     }
 }
 
+/// Acquire the modules, run a scenario **once**, and return its result.
+///
+/// Useful on its own for a scenario with a natural end, and it is what [`run`]
+/// loops over.
+pub async fn run_once<L, S, F>(link: &mut L, scenario: S) -> anyhow::Result<()>
+where
+    L: Link,
+    S: FnOnce(std::sync::Arc<Modules>) -> F,
+    F: std::future::Future<Output = anyhow::Result<()>>,
+{
+    let (ids, tx, mut rx) = link.acquire().await?;
+    info!("all {} module(s) bound, starting the scenario", ids.len());
+
+    let (event_tx, event_rx) = mpsc::unbounded_channel();
+    let (command_tx, mut command_rx) =
+        mpsc::unbounded_channel::<(ModuleId, Command, oneshot::Sender<anyhow::Result<()>>)>();
+
+    let modules = std::sync::Arc::new(Modules {
+        ids,
+        descriptors: HashMap::new(),
+        events: Mutex::new(event_rx),
+        commands: command_tx,
+    });
+
+    // One task owns the link. Sending and receiving are separate halves, so both
+    // can sit in the same select! without borrowing the same value.
+    let pump = tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                incoming = rx.recv() => {
+                    let Some(item) = incoming else {
+                        debug!("link finished");
+                        break;
+                    };
+                    if event_tx.send(item).is_err() {
+                        debug!("scenario stopped listening");
+                        break;
+                    }
+                }
+                outgoing = command_rx.recv() => {
+                    let Some((id, command, ack)) = outgoing else {
+                        debug!("scenario stopped sending");
+                        break;
+                    };
+                    let result = tx.send(&id, command).await;
+                    let _ = ack.send(result);
+                }
+            }
+        }
+    });
+
+    let outcome = scenario(modules.clone()).await;
+    drop(modules);
+    pump.abort();
+    let _ = pump.await;
+    outcome
+}
+
+/// How long to wait before starting the next round.
+///
+/// Not just politeness: a scenario that fails *immediately* -- a capability
+/// check that cannot pass, say -- would otherwise spin this loop as fast as the
+/// CPU allows. The BLE link hides that behind its own acquisition backoff; the
+/// simulated one does not, which is how it was noticed.
+const RESTART_DELAY: Duration = Duration::from_secs(1);
+
 /// Run a scenario against a transport, re-acquiring modules whenever it ends.
 ///
 /// The scenario is an `async fn` taking `&Modules`, not a trait: neither
@@ -151,60 +217,11 @@ where
     F: std::future::Future<Output = anyhow::Result<()>>,
 {
     loop {
-        let (ids, tx, mut rx) = link.acquire().await?;
-        info!("all {} module(s) bound, starting the scenario", ids.len());
-
-        let (event_tx, event_rx) = mpsc::unbounded_channel();
-        let (command_tx, mut command_rx) =
-            mpsc::unbounded_channel::<(ModuleId, Command, oneshot::Sender<anyhow::Result<()>>)>();
-
-        // Collect the Hello each module sends on connect, so the scenario can be
-        // checked against what the boards say they are.
-        let descriptors = HashMap::new();
-
-        let modules = std::sync::Arc::new(Modules {
-            ids: ids.clone(),
-            descriptors,
-            events: Mutex::new(event_rx),
-            commands: command_tx,
-        });
-
-        // One task owns the link. Sending and receiving are separate halves, so
-        // both can sit in the same select! without borrowing the same value.
-        let pump = tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    incoming = rx.recv() => {
-                        let Some(item) = incoming else {
-                            debug!("link finished");
-                            break;
-                        };
-                        if event_tx.send(item).is_err() {
-                            debug!("scenario stopped listening");
-                            break;
-                        }
-                    }
-                    outgoing = command_rx.recv() => {
-                        let Some((id, command, ack)) = outgoing else {
-                            debug!("scenario stopped sending");
-                            break;
-                        };
-                        let result = tx.send(&id, command).await;
-                        let _ = ack.send(result);
-                    }
-                }
-            }
-        });
-
-        let outcome = scenario(modules.clone()).await;
-        drop(modules);
-        pump.abort();
-        let _ = pump.await;
-
-        match outcome {
+        match run_once(&mut link, &mut scenario).await {
             Ok(()) => info!("scenario finished, re-acquiring modules"),
             Err(err) => warn!("scenario ended: {err:#}; re-acquiring modules"),
         }
+        tokio::time::sleep(RESTART_DELAY).await;
     }
 }
 

@@ -80,7 +80,11 @@ USAGE:
 OPTIONS:
     --simulate           Run with no radio and no boards. Presses come from the
                          keyboard. Good for trying a scenario on a train.
-    --scenario <name>    whack (default) or simon
+    --scenario <name>    which game to run:
+                           whack      light one at random, press it, repeat
+                                      forever (the default)
+                           simon      repeat a growing sequence from memory
+                           speedrun   10 timed laps, reports every split
     -h, --help           Show this
 
 ENVIRONMENT:
@@ -116,7 +120,8 @@ async fn main() -> anyhow::Result<()> {
     let scenario: Scenario = match scenario {
         "whack" => |m| Box::pin(scenarios::whack_a_mole(m)) as _,
         "simon" => |m| Box::pin(scenarios::simon_says(m)) as _,
-        other => anyhow::bail!("unknown scenario {other:?}. Known: whack, simon"),
+        "speedrun" => |m| Box::pin(scenarios::speedrun(m)) as _,
+        other => anyhow::bail!("unknown scenario {other:?}. Known: whack, simon, speedrun"),
     };
 
     let modules = vec![button_module("a"), button_module("b")];

@@ -101,6 +101,12 @@ Prefer `next_press` to hand-filtering `next_event`. An ignore arm in a `match`
 still consumes the caller's loop iteration, which is a real bug that shipped
 briefly here.
 
+`scenarios.rs` holds three examples chosen to cover the different shapes:
+`whack_a_mole` waits on a named module and ignores everything else,
+`simon_says` waits on any module and treats a wrong press as fatal, and
+`speedrun` waits on any module, counts wrong presses, and ends after a fixed
+number of laps.
+
 ### Running without hardware
 
 `just simulate` swaps `link/ble.rs` for `link/sim.rs` — in-process channels
