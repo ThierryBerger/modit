@@ -42,11 +42,11 @@ one covered it. The reasoning, and what it decided about the project, is in
 
 This is an early, honest-about-itself project rather than a product.
 
-One module type — **a button and a light** — works on real hardware. A **coin
-acceptor** module is written and plays in simulation but has not been attached to
-a real acceptor yet.
+One module type — **a button and a light** — works on real hardware and plays
+games. A **coin acceptor** counts real coins on an Arduino Uno, and plays in
+simulation, but cannot join a game over the radio yet.
 
-Each module's page says which of the two it is, and
+Each module's page says what has been confirmed on a board and what has not, and
 [hardware](HARDWARE.md) lists them in one table. Nothing here is described as
 working when it has not met a board.
 

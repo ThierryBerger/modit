@@ -7,6 +7,7 @@
 
 BUTTON := "crates/module-button"
 COIN := "crates/module-coin"
+COIN_UNO := "crates/module-coin-uno"
 
 # List the available recipes.
 default:
@@ -19,12 +20,13 @@ check: check-host check-firmware
 check-host:
     cargo check --workspace --all-targets
 
-# Check every firmware crate. Needs the `esp` toolchain -- run `just setup` if
-# this fails. MODIT_ID only has to be *a* value to type-check; flashing is what
-# makes it real.
+# Check every firmware crate. Needs the `esp` toolchain and the AVR one -- run
+# `just setup` and `just setup-avr` if this fails. MODIT_ID only has to be *a*
+# value to type-check; flashing is what makes it real.
 check-firmware:
     cd {{BUTTON}} && MODIT_ID=check cargo check --all-targets
     cd {{COIN}} && MODIT_ID=check cargo check --all-targets
+    cd {{COIN_UNO}} && cargo check
 
 # Run the brain against real hardware.
 brain *ARGS:
@@ -51,6 +53,14 @@ flash id *ARGS:
 flash-coin id *ARGS:
     cd {{COIN}} && MODIT_ID={{id}} cargo run --release {{ARGS}}
 
+# Build, flash and open the serial console of the Arduino Uno coin firmware.
+#
+# UNPLUG THE 12 V SUPPLY FIRST. USB and the acceptor's supply are never connected
+# at the same time -- see docs/hardware/module-coin.md. The port is found on its
+# own; pass `-P /dev/ttyUSB0` to choose one. Ctrl+C closes the console.
+flash-coin-uno *ARGS:
+    cd {{COIN_UNO}} && cargo run --release -- {{ARGS}}
+
 # Watch the serial output of an already-flashed board.
 monitor:
     espflash monitor
@@ -60,18 +70,21 @@ fmt:
     cargo fmt --all
     cd {{BUTTON}} && cargo fmt --all
     cd {{COIN}} && cargo fmt --all
+    cd {{COIN_UNO}} && cargo fmt --all
 
 # Verify formatting without writing (what CI runs).
 fmt-check:
     cargo fmt --all -- --check
     cd {{BUTTON}} && cargo fmt --all -- --check
     cd {{COIN}} && cargo fmt --all -- --check
+    cd {{COIN_UNO}} && cargo fmt --all -- --check
 
 # Lint every workspace.
 clippy:
     cargo clippy --workspace --all-targets -- -D warnings
     cd {{BUTTON}} && MODIT_ID=check cargo clippy --all-targets -- -D warnings
     cd {{COIN}} && MODIT_ID=check cargo clippy --all-targets -- -D warnings
+    cd {{COIN_UNO}} && cargo clippy --release -- -D warnings
 
 # Run the host tests.
 test:
@@ -85,6 +98,7 @@ ci: fmt-check check clippy test build-firmware
 build-firmware:
     cd {{BUTTON}} && MODIT_ID=check cargo build --release
     cd {{COIN}} && MODIT_ID=check cargo build --release
+    cd {{COIN_UNO}} && cargo build --release
 
 # Regenerate the wiring schematics from schematics.py.
 #
@@ -126,3 +140,10 @@ setup:
     @echo ""
     @echo "Now run:  source ~/export-esp.sh"
     @echo "(needed once per shell, before any firmware command)"
+
+# Install the Arduino Uno toolchain: avr-gcc links, avrdude flashes, ravedude
+# drives avrdude and finds the port. The Rust nightly comes from the crate's
+# rust-toolchain.toml on first build.
+setup-avr:
+    sudo apt-get install gcc-avr avr-libc avrdude
+    cargo install --locked ravedude

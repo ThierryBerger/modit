@@ -4,7 +4,8 @@
 # need a different toolchain and target than everything else:
 #
 #   toolchain   esp (Espressif's Xtensa fork)   vs.  stable
-#   target      xtensa-esp32-none-elf           vs.  the host triple
+#               or a pinned nightly (AVR)
+#   target      xtensa-esp32-none-elf / avr-none vs.  the host triple
 #   std         no_std + build-std              vs.  std
 #
 # Cargo resolves features and picks a single target per workspace, so those two
@@ -12,7 +13,7 @@
 # `[workspace]` table (making it a workspace root of its own), its own
 # `Cargo.lock`, its own `rust-toolchain.toml` and its own `.cargo/config.toml`.
 #
-# The lockfiles are pinned rather than resolved fresh: the `esp` toolchain lags
+# The lockfiles are pinned rather than resolved fresh: the firmware toolchains lag
 # stable, and a clean resolve picks dependency versions that require a newer
 # rustc than it has. Copy the lockfile when adding a module crate.
 #
@@ -20,7 +21,7 @@
 
 [workspace]
 members = ["crates/brain", "crates/shared"]
-exclude = ["crates/module-button", "crates/module-coin"]
+exclude = ["crates/module-button", "crates/module-coin", "crates/module-coin-uno"]
 resolver = "3"
 
 [workspace.package]

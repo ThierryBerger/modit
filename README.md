@@ -63,8 +63,9 @@ Modit (mod it), is a reference to its modularity, containing:
 ## Status
 
 Early. Two module types exist: a button with an LED (`crates/module-button`),
-which works on real hardware, and a coin acceptor (`crates/module-coin`), whose
-firmware is written but has not met a board yet. The brain ships four scenarios.
+which works on real hardware, and a coin acceptor, which counts real coins on an
+Arduino Uno (`crates/module-coin-uno`, standalone) and has ESP32 firmware
+(`crates/module-coin`) written but not yet run. The brain ships four scenarios.
 The edges are rough, and [`plans/`](plans/) is where the remaining work and the
 reasoning behind it live.
 
@@ -83,9 +84,9 @@ Today, in practice:
 - Run the brain: `just brain --modules a`. The default bench is two boards
   (`a,b`); `--modules` names the ones you actually built.
 
-The coin acceptor is a separate build (`just flash-coin slot`) and involves
-12 V. Read [hardware](docs/HARDWARE.md) before wiring it -- the pulse line will
-destroy a GPIO if your unit pulls it up to 12 V.
+The coin acceptor is a separate build (`just flash-coin-uno` for the Uno,
+`just flash-coin slot` for the ESP32) and involves 12 V. Read [hardware](docs/HARDWARE.md) before wiring it -- the wrong acceptor wire
+on a pin will destroy it.
 
 Run `just` on its own to see every available command.
 
@@ -113,6 +114,7 @@ startup, so a typo is a compile error rather than a scan that finds nothing.
 | `crates/brain`  | The host binary: scans, connects, runs the scenario. |
 | `crates/module-button`| ESP32 firmware for a button+LED module. Separate workspace -- different toolchain and target. |
 | `crates/module-coin` | ESP32 firmware for a coin acceptor. Separate workspace, same reason. Speaks `shared::proto`. |
+| `crates/module-coin-uno` | Arduino Uno firmware for the same acceptor, standalone: counts coins, blinks an LED. Separate workspace. |
 | `plans/`        | Planned work, and the reasoning that chose it. Start with [`plans/README.md`](plans/README.md). |
 | `docs/`         | [Why](docs/WHY.md), [getting started](docs/GETTING-STARTED.md), [composing](docs/COMPOSING.md), [tutorial](docs/TUTORIAL.md), [hardware](docs/HARDWARE.md), [architecture](docs/ARCHITECTURE.md). |
 | `docs/site/`    | How those pages become <https://vrixyz.github.io/modit/>. One staging script, no second copy of any page. |

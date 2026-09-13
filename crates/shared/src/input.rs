@@ -23,7 +23,7 @@
 //! after ~49 days; every comparison here uses `wrapping_sub`, so a wrap costs at
 //! most one mis-timed boundary rather than a hang or a stuck counter.
 
-use core::sync::atomic::{AtomicU32, Ordering};
+use portable_atomic::{AtomicU32, Ordering};
 
 /// Edges counted by an interrupt handler, waiting to be read by a main loop.
 ///

@@ -7,3 +7,5 @@ edition.workspace = true
 serde_derive = { version = "1", default-features = false }
 serde = { version = "1", default-features = false }
 postcard.workspace = true
+# Atomics for targets without them (AVR); re-exports `core`'s everywhere else.
+portable-atomic = "1"

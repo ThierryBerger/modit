@@ -172,10 +172,12 @@ holding the button still produces exactly one event" -- and it was never run.
       wrap.
 - [x] `module-button` arms `GpioEvent::AnyEdge` and the handler reads the pin
       level to tell press from release.
-- [ ] **Not applied to `module-coin`.** Its pulse line is a transistor output
+- [x] **Not applied to `module-coin`.** Its pulse line is a transistor output
       rather than a contact, and step 2 promised that moving it onto the latch
-      changes nothing observable. Decide it against a real acceptor, not by
-      symmetry.
+      changes nothing observable. Decided against a real acceptor (2026-09-13):
+      `module-coin-uno` arms the falling edge only, calls `record` and never
+      `record_release`, and counts every coin exactly. There is no release
+      bounce to suppress.
 - [ ] Confirm on hardware, with the check from step 4.
 
 Belt and braces on the host side, in `brain`: `whack_a_mole` now drops presses
@@ -184,7 +186,9 @@ before the light is not a hit on it, whatever the firmware does.
 
 ### 4. Verify on hardware — **blocked: needs two boards**
 
-- [ ] Coin module: post coins, confirm identical burst counts to before.
+- [ ] Coin module: post coins, confirm identical burst counts to before. The
+      latch itself is confirmed on real coins by `module-coin-uno` (same
+      `EdgeLatch`, same `shared::coin` timing); what is left is the ESP32 build.
 - [ ] Button module: confirm presses still register, and that holding the button
       still produces exactly one event. **This is the one that matters** -- see
       step 3b, which is the bug it would have caught. Hold the button for a full

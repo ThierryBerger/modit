@@ -43,7 +43,8 @@ Every plan carries these sections so that future-you can re-enter it cold:
 | 09 | [A seam to write scenarios against](doing/09-scenario-seam.md) | easy to get into | L | 🔨 built + tested; per-module recovery left |
 | 10 | [Earn the battery life BLE was chosen for](todo/10-power-and-battery.md) | modules run on batteries | M | todo — **starts with a measurement** |
 | 11 | [Put the protocol in `shared`, not in the UUIDs](doing/11-message-protocol.md) | scales past one module type | L | 🔨 step 1 done; steps 2-4 need a board |
-| 12 | [A coin acceptor module](doing/12-coin-module.md) | a second module type | L | 🔨 host + ESP32 firmware done; **bringing up on an Arduino Uno**, standalone; BLE waits on 11 |
+| 12 | [A coin acceptor module: protocol, simulator, Uno](done/12-coin-module-uno.md) | a second module type | L | ✅ done — an Uno counts real coins |
+| 12 | [A coin acceptor module: the ESP32, and coins over BLE](doing/12-coin-module-esp32.md) | a second module type | M | 🔨 firmware written, **needs the acceptor on an ESP32**; BLE waits on 11 |
 | 13 | [A brainless mode: modules pass a token](todo/13-brainless-token-mesh.md) | a game with no laptop | L | todo — **isolated experiment**, starts with a radio spike |
 | 14 | [Catch every input, not just the slow ones](doing/14-edge-latched-inputs.md) | no input is silently dropped | M | 🔨 steps 1-3b done + tested, **step 4 needs a board** |
 | 15 | [Targets you hit with a ball](todo/15-impact-targets.md) | a game played with a racket | L | todo — **starts with one piezo and a plank** |
@@ -67,7 +68,7 @@ What is left, in order:
 1. **Hardware verification** (`CHECKME.md`) — three plans wait on it.
 2. **Plan 11 steps 2–4**: move the firmware onto the real `Command`/`Event`
    messages. Step 1 (the types) is done and tested; the firmware half needs a
-   board, so it waits for 1. **[Plan 12](doing/12-coin-module.md) step 5 is
+   board, so it waits for 1. **[Plan 12](doing/12-coin-module-esp32.md) step 5 is
    blocked on exactly this** — the coin module runs under `--simulate` and
    cannot run over BLE until the link stops being typed to buttons.
 3. **Plan 09's last piece**: per-module demotion and background re-acquisition.

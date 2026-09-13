@@ -76,7 +76,7 @@ end the round: the runtime has no failure signal on the command path whatsoever.
 
 **Scenarios hold a stale module list.**
 `Modules::ids()` (`runtime.rs:60`) is a snapshot taken at acquisition and never
-shrinks. `whack_a_mole` copies it once (`scenarios.rs:47`) and keeps picking from
+shrinks. `whack_a_mole` copies it once (`scenarios/whack_a_mole/mod.rs`) and keeps picking from
 it, so a module known to be lost stays in the pool: the round lights a box that
 is not there and then waits the full 30 s `PATIENCE` for a press that cannot
 come.

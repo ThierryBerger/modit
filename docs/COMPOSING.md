@@ -125,7 +125,7 @@ by hand rather than guessing which box is the coin slot.
 The shipped scenarios are deliberately different *shapes*, not four variations
 on one. Find the row that matches the game you have in mind and start from that
 one -- they live in
-[`crates/brain/src/scenarios.rs`](../crates/brain/src/scenarios.rs).
+[`crates/brain/src/scenarios/`](../crates/brain/src/scenarios/), one folder each.
 
 | Scenario | Modules it needs | The shape it is an example of |
 | -------- | ---------------- | ----------------------------- |
@@ -162,7 +162,7 @@ that starts the game (a coin, a big green button, a keypad) and things that
    tested.
 
 Then copy the closest scenario: [Getting started](GETTING-STARTED.md) has the
-shortest possible one, and the real ones are next to it in `scenarios.rs`.
+shortest possible one, and the real ones are next to it in `scenarios/`.
 
 ## What the brain does not do
 

@@ -74,6 +74,7 @@ use esp_hal::{
 };
 use esp_println::println;
 use esp_wifi::{ble::controller::BleConnector, init};
+use shared::coin::{BURST_GAP_MS, PULSE_DEBOUNCE_MS};
 use shared::input::{saturating_u8, EdgeLatch};
 use shared::proto::{self, Command, Descriptor, Event, Role, PROTOCOL_VERSION};
 
@@ -81,27 +82,6 @@ esp_bootloader_esp_idf::esp_app_desc!();
 
 /// What kind of module this firmware is. Part of the advertised name.
 const MODIT_ROLE: &str = "coin";
-
-/// Shortest gap between two edges that can be two genuine pulses.
-///
-/// Anything faster is contact bounce or noise coupled in from the acceptor's
-/// solenoid, which draws a 350 mA spike when it fires. Well below the ~30 ms
-/// minimum pulse the acceptor is capable of emitting, so it cannot swallow a
-/// real one.
-const PULSE_DEBOUNCE_MS: u32 = 8;
-
-/// Quiet time that marks the end of one coin's burst.
-///
-/// Chosen from the two numbers on the acceptor's datasheet:
-///
-/// - Pulses *within* one burst are at most ~100 ms apart, even on the slowest
-///   pulse-width setting, so this must be comfortably above that.
-/// - Recognition takes up to 0.6 s per coin, so two coins cannot produce bursts
-///   closer together than that, and this must be comfortably below it.
-///
-/// 300 ms sits between the two with room on both sides. If you change the
-/// acceptor's pulse-speed switch, re-check it against this.
-const BURST_GAP_MS: u32 = 300;
 
 /// Which physical board this is, baked in at flash time.
 ///

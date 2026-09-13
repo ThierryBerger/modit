@@ -2,12 +2,13 @@
 
 A CH-92x-family coin selector, driven by one of two boards:
 
-- an **Arduino Uno** (or a clone such as the Kuman Uno) -- what is being brought
-  up now. Its firmware is not written yet, and it **cannot talk to the brain
-  yet**: that is work in progress.
-- an **ESP32** -- the original design, wireless over BLE. Firmware:
-  [`crates/module-coin`](../../crates/module-coin/). Written, never run against
-  an acceptor.
+- an **Arduino Uno** (or a clone such as the Kuman Uno). Firmware:
+  [`crates/module-coin-uno`](../../crates/module-coin-uno/). **Works on real
+  hardware**: it counts coins and blinks each one's pulse count. It **cannot
+  talk to the brain yet**: that is work in progress.
+- an **ESP32** -- wireless over BLE. Firmware:
+  [`crates/module-coin`](../../crates/module-coin/). **Work in progress**:
+  written, never run against an acceptor.
 
 Sections that depend on the board have a tab for each. On GitHub they are shown
 one after the other.
@@ -23,8 +24,8 @@ one after the other.
 > - `COUNTER` is **not** a signal for the board. It drives a 12 V tally counter.
 >   Leave it unconnected.
 >
-> Measure every wire against `GND` before connecting anything: clone units
-> relabel and recolour these wires freely. And **join the board's `GND` to the
+> On an unfamiliar unit, measure every wire against `GND` before connecting
+> anything: clone units relabel and recolour these wires freely. And **join the board's `GND` to the
 > 12 V supply's `GND`** -- without a shared reference the COIN signal means
 > nothing.
 
@@ -48,22 +49,32 @@ What a coin is *worth* is not wired into the module. The firmware reports the
 pulses the acceptor emitted; a scenario turns pulses into credits, because
 pricing is policy and the scenario is the part you edit.
 
-**Not yet confirmed on hardware** -- `arcade` runs under
-`just simulate --scenario arcade`, but no acceptor has been attached to either
-board. Status for every module is in [Hardware](../HARDWARE.md), and the
-bring-up is tracked in [plan 12](../../plans/doing/12-coin-module.md).
+**Counting coins is confirmed on hardware**, on the Uno: every coin arrives as one
+burst of exactly its taught pulse count, repeatably. Playing `arcade` with a real
+coin is not -- that needs the ESP32 and BLE, so today `arcade` runs under
+`just simulate --scenario arcade`. Status for every module is in
+[Hardware](../HARDWARE.md). What the bench established is in [plan
+12](../../plans/done/12-coin-module-uno.md#confirmed-on-the-bench-2026-09-13);
+what is left, in [its ESP32 half](../../plans/doing/12-coin-module-esp32.md).
 
 ## Before wiring either board
 
-- **Read the labels, then check them with a meter** against the acceptor's `GND`,
-  acceptor on 12 V: `DC12V` reads 12 V, and `COIN` floats (an open collector
-  with nothing pulling it up yet).
+These hold for the acceptor, whichever board reads it. On the unit this page was
+built against (a CH-92x-family acceptor branded 616) they are confirmed on the
+bench.
+
+- **The wires are `DC12V`, `COIN`, `GND` and `COUNTER`**, plus a two-pin `SET`
+  header. On a clone whose labels you do not trust, check with a meter against
+  the acceptor's `GND`, acceptor on 12 V: `DC12V` reads 12 V, and `COIN` floats
+  (an open collector with nothing pulling it up yet).
 - **Leave `COUNTER` and the `SET` pins unconnected.** `COUNTER` drives a
   mechanical tally counter; `SET` is for programming the acceptor.
-- **If the unit has an NO/NC switch, set it to NO.** On NC the COIN line idles
-  low and pulses high, the opposite of what the firmware listens for.
-- **Note where the pulse-speed switch is.** The 300 ms burst gap below is chosen
-  to work at every setting, but it is the first thing to re-check if you move it.
+- **Set the NO/NC switch to NO.** On NC the COIN line idles low and pulses high,
+  the opposite of what the firmware listens for. The firmware's self-test catches
+  this: it is the first cause listed when the pulse line reads low at rest.
+- **Leave the pulse-speed switch where it is**, or re-check the 300 ms burst gap
+  if you move it. It is confirmed at the 616's current setting, and chosen to work
+  at every setting, but that second part is arithmetic from the datasheet.
 
 ## Bill of materials
 
@@ -105,9 +116,6 @@ bring-up is tracked in [plan 12](../../plans/doing/12-coin-module.md).
 
 The acceptor's `COUNTER` and `SET` pins are not connected.
 
-The Uno's net table is **not checked against firmware yet** -- there is no Uno
-firmware for `wiring_tables_match_firmware` to read.
-
 #### Power
 
 ![Uno power](module-coin-uno-power.svg)
@@ -121,6 +129,9 @@ spike has to return to the supply's (−). Routed through the Uno's `GND` pin
 instead, it lifts the Uno's idea of "low" by however much that path drops, and a
 pulse gets missed.
 
+Wired this way, the solenoid firing does not reset the Uno and does not cost a
+pulse: confirmed on the bench.
+
 **The USB cable and the 12 V supply are never connected at the same time.** USB
 puts the computer on the same ground as the 12 V supply, and then a wiring
 mistake on the bench can reach the computer's USB port. So: unplug the 12 V
@@ -132,7 +143,8 @@ not powered from USB during a run, and it does not need to be.
 ![Coin pulse input wiring, Uno](module-coin-uno-input.svg)
 
 This is the circuit from the widely copied CH-926 Arduino tutorial -- a 10 k
-pull-up to 5 V on the COIN wire, into `D2` -- plus `R2` in series.
+pull-up to 5 V on the COIN wire, into `D2` -- plus `R2` in series. Built as drawn,
+it counts every pulse.
 
 `R1` sits on the **acceptor's side** of `R2`, not the pin's. In normal operation
 `R2` then carries only the pin's leakage current, so `D2` reads the acceptor's
@@ -163,6 +175,11 @@ The ESP32 runs from 5 V USB, as every module does; the acceptor from its own
 #### COIN pulse input
 
 ![Coin pulse input wiring](module-coin-input.svg)
+
+**Work in progress.** What this relies on about the acceptor -- an
+open-collector `COIN`, idling high on NO, pulses the firmware's timing splits
+correctly -- is confirmed on the Uno. What is not: that the ESP32's weak internal
+pull-up, through `R1`, is enough on its own.
 
 The acceptor's COIN output is **open-collector**: a bare transistor that pulls
 the line down and never drives it up. Whatever pulls it up decides its idle
@@ -203,20 +220,30 @@ main loop only ever reads a count the handler already committed to.
 
 ### Arduino Uno
 
-Before any firmware, with a multimeter. Acceptor and Uno wired and on the 12 V
-supply, **USB unplugged**:
+Flash it with the 12 V supply **unplugged**, USB in:
 
-- `D2` against `GND` reads **about 5 V** at rest. About 0 V means the NO/NC
-  switch is on NC, the grounds are not joined, or that is not the COIN wire.
-- Post a coin the acceptor was taught: it should be accepted and drop through.
-  That checks the acceptor alone, before the Uno counts anything.
+```
+just flash-coin-uno
+```
 
-Once the firmware exists: at boot it blinks the `L` LED three times slowly. A
-coin taught as *n* pulses then blinks it *n* times, in one group. A steady fast
-blink instead means `D2` read low at rest: do not trust any counts until that is
-fixed. A quick flicker right at power-on is the bootloader, not a coin.
+It opens the serial console afterwards, which should print
+`self-test: D2 idles high; post a coin`. On USB alone that only proves `R1`
+reaches `5V`: the acceptor is unpowered. Close the console, unplug USB, then plug
+in the 12 V supply.
+
+At boot it blinks the `L` LED three times slowly. A coin taught as *n* pulses
+then blinks it *n* times, in one group. A steady fast blink instead means `D2`
+read low at rest: the NO/NC switch is on NC, the grounds are not joined, or that
+is not the COIN wire, and nothing is counted until it is fixed. A quick flicker
+right at power-on is the bootloader, not a coin; three slow blinks again later
+mean the Uno reset.
+
+That self-test is the check: on 12 V it reads `D2` at rest, so a multimeter on
+`D2` is optional.
 
 ### ESP32
+
+**Work in progress** -- never run against an acceptor.
 
 ```
 just flash-coin slot

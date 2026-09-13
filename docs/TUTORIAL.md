@@ -310,10 +310,12 @@ pub async fn my_game(modules: Arc<Modules>) -> anyhow::Result<()> {
 }
 ```
 
-Add it to the `match` in `main.rs` and run it with
+Give it its own folder in `crates/brain/src/scenarios/` (a `mod.rs` for the
+rules, a `tests.rs` for its tests), declare it in `scenarios/mod.rs`, add it
+to the `match` in `main.rs`, and run it with
 `just simulate --scenario <name>` — no hardware needed to develop it.
 
-[`scenarios.rs`](../crates/brain/src/scenarios.rs) has three worked examples,
+[`scenarios/`](../crates/brain/src/scenarios/) has one folder per worked example,
 deliberately different from one another:
 
 | Scenario | Waits with | Wrong press | Ends |

@@ -1260,6 +1260,7 @@ dependencies = [
 name = "shared"
 version = "0.1.0"
 dependencies = [
+ "portable-atomic",
  "postcard",
  "serde",
  "serde_derive",

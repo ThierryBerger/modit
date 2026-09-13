@@ -1,0 +1,23 @@
+[general]
+# After flashing, open the serial console. USB power only: the 12 V supply is
+# never plugged in at the same time.
+open-console = true
+serial-baudrate = 57600
+
+[board]
+inherit = "uno"
+
+# ravedude finds the port by USB id. Uno clones carry a CH340 instead of the
+# genuine board's ATmega16U2, so both are listed.
+[[board.usb-info.port-ids]]
+vid = 0x2341 # Arduino
+pid = 0x0043
+[[board.usb-info.port-ids]]
+vid = 0x2341 # Arduino
+pid = 0x0001
+[[board.usb-info.port-ids]]
+vid = 0x2a03 # Arduino.org
+pid = 0x0043
+[[board.usb-info.port-ids]]
+vid = 0x1a86 # WCH CH340
+pid = 0x7523

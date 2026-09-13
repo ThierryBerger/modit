@@ -64,3 +64,27 @@ jobs:
       - name: Build
         # A real build, not just check: the panic handler resolves at link time.
         run: cargo build --release
+
+  firmware-avr:
+    name: firmware (module-coin-uno)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: crates/module-coin-uno
+    steps:
+      - uses: actions/checkout@v4
+      - name: AVR linker
+        run: sudo apt-get update && sudo apt-get install -y gcc-avr avr-libc
+      # rustup reads the crate's rust-toolchain.toml, pinned nightly and rust-src included.
+      - name: Toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/module-coin-uno
+
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --release -- -D warnings
+      - name: Build
+        run: cargo build --release

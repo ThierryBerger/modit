@@ -5,7 +5,7 @@ What a modit module is made of, and how to wire it.
 | Module | What | Status |
 | ------ | ---- | ------ |
 | **[module-button](hardware/module-button.md)** | One button, one LED. | Works on real hardware. **Start here** — this is what the [tutorial](TUTORIAL.md) uses. |
-| **[module-coin](hardware/module-coin.md)** | A coin acceptor. **Involves 12 V.** | Being brought up on an **Arduino Uno**, standalone -- it does not talk to the brain yet. ESP32 firmware written, never met a board. |
+| **[module-coin](hardware/module-coin.md)** | A coin acceptor. **Involves 12 V.** | **Arduino Uno: works on real hardware**, standalone -- counts coins, does not talk to the brain yet. ESP32: work in progress, firmware written, never met the acceptor. |
 
 Each page opens with what the module is *for* before it says what to solder, so
 this table is also the answer to "which one do I build?".

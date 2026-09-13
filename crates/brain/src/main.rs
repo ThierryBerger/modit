@@ -2,8 +2,6 @@ mod ble;
 mod link;
 mod runtime;
 mod scenarios;
-#[cfg(test)]
-mod scenarios_tests;
 
 use anyhow::Context;
 use ble::*;
@@ -368,24 +366,50 @@ mod tests {
         }
     }
 
-    /// Which documentation page describes which firmware. One entry per module.
-    const WIRING_DOCS: &[(&str, &str)] = &[
+    /// How one kind of board spells a pin: in a net table, and in firmware.
+    struct PinSpelling {
+        /// Precedes the pin number in a net table row, e.g. `` `GPIO `` in `` `GPIO27` ``.
+        table: &'static str,
+        /// Precedes the pin number where the firmware takes the pin.
+        firmware: &'static str,
+    }
+
+    const ESP32: PinSpelling = PinSpelling {
+        table: "`GPIO",
+        firmware: "peripherals.GPIO",
+    };
+    const UNO: PinSpelling = PinSpelling {
+        table: "`D",
+        firmware: "pins.d",
+    };
+
+    /// Which documentation page describes which firmware, and on which board.
+    /// One entry per firmware; a page may carry a table for several boards.
+    const WIRING_DOCS: &[(&str, &str, PinSpelling)] = &[
         (
             "/../../docs/hardware/module-button.md",
             "/../module-button/src/main.rs",
+            ESP32,
         ),
         (
             "/../../docs/hardware/module-coin.md",
             "/../module-coin/src/main.rs",
+            ESP32,
+        ),
+        (
+            "/../../docs/hardware/module-coin.md",
+            "/../module-coin-uno/src/main.rs",
+            UNO,
         ),
     ];
 
-    /// Pull every `GPIOnn` out of a string, as a sorted, deduplicated list.
-    fn gpios(text: &str) -> Vec<u32> {
+    /// Every number directly following `prefix` in `text`, sorted and
+    /// deduplicated.
+    fn pin_numbers(text: &str, prefix: &str) -> Vec<u32> {
         let mut found: Vec<u32> = text
-            .match_indices("GPIO")
+            .match_indices(prefix)
             .filter_map(|(at, _)| {
-                let digits: String = text[at + 4..]
+                let digits: String = text[at + prefix.len()..]
                     .chars()
                     .take_while(char::is_ascii_digit)
                     .collect();
@@ -410,7 +434,7 @@ mod tests {
     /// should keep being able to).
     #[test]
     fn wiring_tables_match_firmware() {
-        for (doc_rel, fw_rel) in WIRING_DOCS {
+        for (doc_rel, fw_rel, spelling) in WIRING_DOCS {
             let doc_path = format!("{}{doc_rel}", env!("CARGO_MANIFEST_DIR"));
             let fw_path = format!("{}{fw_rel}", env!("CARGO_MANIFEST_DIR"));
 
@@ -419,37 +443,33 @@ mod tests {
             let firmware = std::fs::read_to_string(&fw_path)
                 .unwrap_or_else(|e| panic!("cannot read {fw_path}: {e}"));
 
-            // The net table is the rows whose second cell is a `GPIOnn`
-            // literal. Anything else on the page is prose.
+            // The net table is the table rows naming a pin in this board's
+            // spelling. Anything else on the page is prose, or another board.
             let table: String = doc
                 .lines()
                 .filter(|line| line.starts_with('|'))
-                .filter(|line| line.contains("`GPIO"))
+                .filter(|line| line.contains(spelling.table))
                 .collect::<Vec<_>>()
                 .join("\n");
+            let documented = pin_numbers(&table, spelling.table);
             assert!(
-                !table.is_empty(),
-                "{doc_path} has no net table rows naming a `GPIOnn` pin. \
-                 If the table changed shape, update this test."
+                !documented.is_empty(),
+                "{doc_path} has no net table rows naming a `{}nn` pin. \
+                 If the table changed shape, update this test.",
+                spelling.table.trim_start_matches('`')
             );
 
             // The firmware's pins are whatever it asks the HAL for.
-            let used: Vec<u32> = gpios(
-                &firmware
-                    .lines()
-                    .filter(|line| line.contains("peripherals.GPIO"))
-                    .collect::<Vec<_>>()
-                    .join("\n"),
-            );
+            let used = pin_numbers(&firmware, spelling.firmware);
             assert!(
                 !used.is_empty(),
-                "{fw_path} never mentions `peripherals.GPIOnn`. \
-                 If the firmware changed shape, update this test."
+                "{fw_path} never mentions `{}nn`. \
+                 If the firmware changed shape, update this test.",
+                spelling.firmware
             );
 
             assert_eq!(
-                gpios(&table),
-                used,
+                documented, used,
                 "the net table in {doc_path} and the pins used by {fw_path} \
                  have drifted apart. The table is the source of truth for a \
                  human wiring a board -- fix whichever is wrong, and remember \

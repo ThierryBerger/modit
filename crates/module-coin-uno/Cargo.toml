@@ -1,0 +1,38 @@
+# Firmware crate. This is its own workspace root on purpose -- see the comment
+# in the repository root `Cargo.toml` for why it cannot join the host workspace.
+[workspace]
+
+[package]
+edition = "2021"
+name = "module-coin-uno"
+version = "0.1.0"
+
+[[bin]]
+name = "module-coin-uno"
+test = false
+bench = false
+
+[dependencies]
+shared = { path = "../shared" }
+panic-halt = "1.0.0"
+ufmt = "0.2.0"
+portable-atomic = "1"
+avr-device = { version = "0.8.1", features = ["rt"] }
+
+[dependencies.arduino-hal]
+git = "https://github.com/rahix/avr-hal"
+rev = "e0b0105b11a7c4209fb1704276a7921c3139d5cb"
+features = ["arduino-uno"]
+
+# The ATmega328P has 32 KiB of flash: always optimise for size.
+[profile.dev]
+panic = "abort"
+lto = true
+opt-level = "s"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+debug = true
+lto = true
+opt-level = "s"

@@ -65,8 +65,9 @@ On the website each block becomes tabs, and every block with the same
 dropped and the boards read one after the other. The blank lines inside the div
 are required: without them the markdown inside is not rendered.
 
-The check below reads only rows naming a `GPIOnn` pin, so an Uno's `Dn` rows are
-**not checked yet**. A page with such a table says so.
+The check reads each board's rows by its own pin spelling -- `GPIOnn` for an
+ESP32, `Dn` for an Uno -- against that board's firmware, so both tables on one
+page are checked.
 
 ## Designators
 

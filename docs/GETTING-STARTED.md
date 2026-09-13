@@ -66,8 +66,8 @@ just simulate --scenario arcade
 | `speedrun` | Ten timed laps between modules. Reports every split and counts misses. |
 | `arcade` | Pay a coin, play a round. Type `$` to post a coin, or `$3` for a 3-pulse one. |
 
-`arcade` uses a coin acceptor module. That module runs in simulation but has not
-met real hardware yet.
+`arcade` uses a coin acceptor module. That module counts real coins on an Arduino
+Uno, but cannot join a game over the radio yet, so `arcade` is simulation only.
 
 ## Add real boards
 
@@ -154,7 +154,7 @@ The same code runs against real boards and against `--simulate`. That is what
 makes the simulator useful as a test harness: the scenario cannot tell the
 difference.
 
-Scenarios live in [`crates/brain/src/scenarios.rs`](../crates/brain/src/scenarios.rs).
+Scenarios live in [`crates/brain/src/scenarios/`](../crates/brain/src/scenarios/), one folder each.
 Copy whichever one waits the way yours needs to:
 
 - `whack_a_mole` waits on one specific module and ignores wrong presses.
@@ -186,6 +186,7 @@ a trait implementation, not a rewrite.
 | `crates/brain` | The laptop binary: scans, connects, runs the scenario. |
 | `crates/module-button` | ESP32 firmware for a button and an LED. |
 | `crates/module-coin` | ESP32 firmware for a coin acceptor. |
+| `crates/module-coin-uno` | Arduino Uno firmware for a coin acceptor, standalone. |
 
 ## Commands
 

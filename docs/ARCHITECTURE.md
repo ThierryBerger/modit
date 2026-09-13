@@ -24,6 +24,7 @@ no_std, bleps    no_std, bleps    tokio + btleplug
 | [`brain`](../crates/brain) | your laptop | stable |
 | [`module-button`](../crates/module-button) | an ESP32 | `esp`, target `xtensa-esp32-none-elf` |
 | [`module-coin`](../crates/module-coin) | an ESP32 | the same |
+| [`module-coin-uno`](../crates/module-coin-uno) | an Arduino Uno | pinned nightly, target `avr-none` |
 
 ## Why there are three workspaces
 
@@ -93,7 +94,7 @@ runs under `--simulate` but not over the radio.
 ## The layers
 
 ```
-scenarios.rs   game rules      async fn(&Modules) -- no BLE types at all
+scenarios/     game rules      one folder per game: async fn(&Modules) -- no BLE types
 runtime.rs     the runtime     owns the link, pumps events, hands out `Modules`
 link/          the transport   Link trait: ble.rs (real) or sim.rs (no radio)
 ble/           BLE plumbing    scanning, connecting, notification streams
@@ -122,7 +123,7 @@ about how to use it.
 
 `just simulate` swaps `link/ble.rs` for `link/sim.rs` — in-process channels
 carrying the same messages. Scenario, runtime and protocol are all the real ones.
-It is also the test harness: the scenario tests in `scenarios_tests.rs` drive it
+It is also the test harness: each scenario's tests, at the bottom of its file, drive it
 programmatically.
 
 ## The round
