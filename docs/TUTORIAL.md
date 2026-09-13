@@ -6,10 +6,8 @@ to one step instead of discovered at the end.
 
 Allow about an hour the first time, most of it waiting for `espup install`.
 
-> **Status:** the host-side steps (0, 1, 3, 9) have been run as written. The steps
-> involving a board have not yet been walked through end to end — see
-> [`CHECKME.md`](../CHECKME.md). If something here is wrong, that is a bug in this
-> file; please fix it as you go.
+> The steps involving a board have not been walked end to end on hardware. If one
+> of them is wrong, that is a bug in this file — please fix it as you go.
 
 ## What you need
 
@@ -37,13 +35,14 @@ enter. `-a` makes a module drop out, so you can watch the brain recover.
  INFO  brain::scenarios > module a hit
 ```
 
-Three scenarios ship as worked examples:
+Four scenarios ship as worked examples:
 
 | `--scenario` | Game |
 | ------------ | ---- |
 | `whack` (default) | One lights at random; press it; another lights. Forever. |
 | `simon` | Repeat a growing sequence from memory. A mistake ends the round. |
 | `speedrun` | 10 timed laps alternating between modules, with every split reported. |
+| `arcade` | A coin buys a round. Needs a coin acceptor, so `--simulate` only. |
 
 **Observe:** a module lights, pressing it moves the light. That is the same
 scenario code the real boards run — only the transport differs.
@@ -204,6 +203,12 @@ turn it off. That exercises the write path and the UUIDs end to end, before
 ---
 
 ## 7. Flash the second module
+
+> **Only have one board?** Skip to step 9 and run `just brain --modules a`. The
+> default bench is `a,b`, and acquisition waits for every board on it, so
+> without the flag the brain rescans forever looking for `b`. One module makes
+> whack-a-mole a reaction timer instead of a hunt -- still a game, and the rest
+> of this tutorial is unchanged.
 
 Disconnect the first board, connect the second:
 

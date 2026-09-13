@@ -5,7 +5,7 @@
 //! task keeps the link to itself and communicates over channels, so a scenario
 //! signature never mentions BLE, simulation, or `Link`.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::time::Duration;
 
 use anyhow::anyhow;
@@ -14,6 +14,9 @@ use shared::proto::{Command, Descriptor, Event};
 use tokio::sync::{Mutex, mpsc, oneshot};
 
 use crate::link::{Link, LinkRx, LinkTx, ModuleEvent, ModuleId};
+
+/// One event, tagged with the module it came from.
+type Incoming = (ModuleId, ModuleEvent);
 
 /// Why a scenario's wait did not produce what it asked for.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,7 +48,10 @@ impl std::error::Error for WaitError {}
 pub struct Modules {
     ids: Vec<ModuleId>,
     descriptors: HashMap<ModuleId, Descriptor>,
-    events: Mutex<mpsc::UnboundedReceiver<(ModuleId, ModuleEvent)>>,
+    /// Events already taken off the channel but not yet handed to the scenario,
+    /// with the channel they came from. One mutex over both, so an event pulled
+    /// out early during the `Hello` sweep is still delivered in arrival order.
+    events: Mutex<(VecDeque<Incoming>, mpsc::UnboundedReceiver<Incoming>)>,
     commands: mpsc::UnboundedSender<(ModuleId, Command, oneshot::Sender<anyhow::Result<()>>)>,
 }
 
@@ -68,7 +74,16 @@ impl Modules {
     /// per-module wait is trivially built from this.
     pub async fn next_event(&self, timeout: Duration) -> Result<(ModuleId, Event), WaitError> {
         let mut events = self.events.lock().await;
-        match tokio::time::timeout(timeout, events.recv()).await {
+        // Anything deferred by the `Hello` sweep comes first, and without
+        // consuming any of the timeout -- it already arrived.
+        if let Some((id, event)) = events.0.pop_front() {
+            return match event {
+                ModuleEvent::Lost => Err(WaitError::ModuleLost(id)),
+                ModuleEvent::Message(event) => Ok((id, event)),
+            };
+        }
+        let (_, rx) = &mut *events;
+        match tokio::time::timeout(timeout, rx.recv()).await {
             Err(_elapsed) => Err(WaitError::Timeout),
             Ok(None) => Err(WaitError::Closed),
             Ok(Some((id, ModuleEvent::Lost))) => Err(WaitError::ModuleLost(id)),
@@ -95,6 +110,53 @@ impl Modules {
                 (from, event) => debug!("ignoring {event:?} from {from}"),
             }
         }
+    }
+
+    /// The next **coin** from any module, skipping everything else.
+    ///
+    /// Returns the module and the pulse count the acceptor reported. Same
+    /// filter-over-[`Self::next_event`] shape as [`Self::next_press`], and for
+    /// the same reason: a hand-rolled `match` that ignores a non-coin event
+    /// still consumes the caller's iteration.
+    ///
+    /// What a pulse is *worth* is not decided here -- see
+    /// [`Event::Coin`](shared::proto::Event::Coin).
+    pub async fn next_coin(&self, timeout: Duration) -> Result<(ModuleId, u8), WaitError> {
+        let deadline = tokio::time::Instant::now() + timeout;
+        loop {
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                return Err(WaitError::Timeout);
+            }
+            match self.next_event(remaining).await? {
+                (from, Event::Coin { pulses, .. }) => return Ok((from, pulses)),
+                (from, event) => debug!("ignoring {event:?} from {from}"),
+            }
+        }
+    }
+
+    /// Throw away every press already queued, and report how many there were.
+    ///
+    /// For a scenario that only counts presses arriving **after** some moment --
+    /// whack-a-mole, where a press before the module lit was aimed at the last
+    /// round, or at nothing. Without this, a queued press is spent instantly on
+    /// the next target: the box lights and goes dark again in the same breath,
+    /// with nobody touching it.
+    ///
+    /// Only presses are dropped. A [`ModuleEvent::Lost`] queued behind them is
+    /// kept, in order -- a scenario must still find out that a module went away
+    /// while it was between rounds.
+    pub async fn drop_pending_presses(&self) -> usize {
+        let mut events = self.events.lock().await;
+        let (deferred, rx) = &mut *events;
+        // Everything the channel is holding right now joins the deferred buffer,
+        // so both are filtered together and what survives keeps its order.
+        while let Ok(item) = rx.try_recv() {
+            deferred.push_back(item);
+        }
+        let before = deferred.len();
+        deferred.retain(|(_, event)| !matches!(event, ModuleEvent::Message(Event::Pressed { .. })));
+        before - deferred.len()
     }
 
     /// Wait for a press on one particular module, ignoring presses elsewhere.
@@ -152,16 +214,9 @@ where
     let (ids, tx, mut rx) = link.acquire().await?;
     info!("all {} module(s) bound, starting the scenario", ids.len());
 
-    let (event_tx, event_rx) = mpsc::unbounded_channel();
+    let (event_tx, mut event_rx) = mpsc::unbounded_channel();
     let (command_tx, mut command_rx) =
         mpsc::unbounded_channel::<(ModuleId, Command, oneshot::Sender<anyhow::Result<()>>)>();
-
-    let modules = std::sync::Arc::new(Modules {
-        ids,
-        descriptors: HashMap::new(),
-        events: Mutex::new(event_rx),
-        commands: command_tx,
-    });
 
     // One task owns the link. Sending and receiving are separate halves, so both
     // can sit in the same select! without borrowing the same value.
@@ -190,11 +245,70 @@ where
         }
     });
 
+    // Every module introduces itself on connect. Collect those before the
+    // scenario starts, so `descriptor` can answer and `require` is a real check
+    // rather than the no-op it was while this map was left empty.
+    let (descriptors, deferred) = collect_hellos(&mut event_rx, &ids).await;
+    for id in &ids {
+        if !descriptors.contains_key(id) {
+            warn!(
+                "module {id} did not introduce itself within {HELLO_TIMEOUT:?}; \
+                 capability checks for it will be skipped"
+            );
+        }
+    }
+
+    let modules = std::sync::Arc::new(Modules {
+        ids,
+        descriptors,
+        events: Mutex::new((deferred, event_rx)),
+        commands: command_tx,
+    });
+
     let outcome = scenario(modules.clone()).await;
     drop(modules);
     pump.abort();
     let _ = pump.await;
     outcome
+}
+
+/// How long to wait for every module to say [`Event::Hello`] before giving up on
+/// the ones that have not.
+///
+/// Short: the modules are already connected by this point, and both links emit
+/// their descriptors as the first thing they do. This is a guard against a
+/// module that never will, not a negotiation.
+const HELLO_TIMEOUT: Duration = Duration::from_millis(500);
+
+/// Take the `Hello` from every module, holding back anything else that arrives.
+///
+/// Returns the descriptors, plus the events that were pulled off the channel
+/// while waiting. Those must be given back to the scenario in order -- a player
+/// leaning on a button during connect should not lose the press.
+async fn collect_hellos(
+    rx: &mut mpsc::UnboundedReceiver<Incoming>,
+    ids: &[ModuleId],
+) -> (HashMap<ModuleId, Descriptor>, VecDeque<Incoming>) {
+    let mut descriptors = HashMap::new();
+    let mut deferred = VecDeque::new();
+    let deadline = tokio::time::Instant::now() + HELLO_TIMEOUT;
+
+    while descriptors.len() < ids.len() {
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if remaining.is_zero() {
+            break;
+        }
+        match tokio::time::timeout(remaining, rx.recv()).await {
+            // Timed out, or the link closed: proceed with what we have.
+            Err(_) | Ok(None) => break,
+            Ok(Some((id, ModuleEvent::Message(Event::Hello(descriptor))))) => {
+                debug!("module {id} is {descriptor:?}");
+                descriptors.insert(id, descriptor);
+            }
+            Ok(Some(other)) => deferred.push_back(other),
+        }
+    }
+    (descriptors, deferred)
 }
 
 /// How long to wait before starting the next round.
@@ -231,6 +345,22 @@ where
 /// Called by a scenario at the top, so a mismatch is reported before the game
 /// starts rather than as a command that silently does nothing.
 pub fn require(modules: &Modules, id: &ModuleId, inputs: u8, outputs: u8) -> anyhow::Result<()> {
+    require_role(modules, id, None, inputs, outputs)
+}
+
+/// As [`require`], but also insist the module is a particular kind of thing.
+///
+/// Worth its own call because the failure it catches is otherwise invisible: a
+/// scenario that waits for coins from a board that is actually a button does not
+/// error, it *hangs* until the timeout and then reports "nobody played". Checking
+/// the role turns that into a message at startup naming both roles.
+pub fn require_role(
+    modules: &Modules,
+    id: &ModuleId,
+    role: Option<shared::proto::Role>,
+    inputs: u8,
+    outputs: u8,
+) -> anyhow::Result<()> {
     let Some(descriptor) = modules.descriptor(id) else {
         // Nothing said Hello. Older firmware, or a link that does not carry
         // descriptors; not fatal on its own.
@@ -244,6 +374,14 @@ pub fn require(modules: &Modules, id: &ModuleId, inputs: u8, outputs: u8) -> any
             shared::proto::PROTOCOL_VERSION
         );
         return Err(anyhow!("module {id} is running incompatible firmware"));
+    }
+    if let Some(wanted) = role
+        && descriptor.role != wanted
+    {
+        return Err(anyhow!(
+            "module {id} is a {:?}, but the scenario needs a {wanted:?}",
+            descriptor.role
+        ));
     }
     if descriptor.inputs < inputs || descriptor.outputs < outputs {
         return Err(anyhow!(

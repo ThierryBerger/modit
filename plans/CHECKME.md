@@ -3,11 +3,11 @@
 **Temporary file.** Delete it once you have worked through it (or fold anything
 still outstanding into the relevant plan and delete the rest).
 
-Everything below compiles, passes clippy under `-D warnings`, and passes 13 tests.
-None of it has touched a real ESP32. Ordered by *how much rests on it*, not by
-effort.
+Everything below compiles, passes clippy under `-D warnings`, and passes the host
+test suite. None of it has touched a real ESP32. Ordered by *how much rests on
+it*, not by effort.
 
-You need: two ESP32 boards wired per [`docs/HARDWARE.md`](docs/HARDWARE.md), a
+You need: two ESP32 boards wired per [`docs/HARDWARE.md`](../docs/HARDWARE.md), a
 phone with a BLE scanner app.
 
 ---
@@ -118,7 +118,7 @@ Lower priority only because these need a deliberate malformed write to trigger.
 
 ## 🟡 6. The tutorial survives being followed
 
-**Plan 08.** [`docs/TUTORIAL.md`](docs/TUTORIAL.md) was written but never walked.
+**Plan 08.** [`docs/TUTORIAL.md`](../docs/TUTORIAL.md) was written but never walked.
 Steps 1, 3 and 8 were run; everything involving a board was not.
 
 - [ ] Follow it start to finish, ideally in a fresh shell and a fresh clone.
@@ -131,41 +131,18 @@ Steps 1, 3 and 8 were run; everything involving a board was not.
       to GND rather than 3V3. It is new firmware code, written blind.
 - [ ] Fix anything you had to improvise. A step that needs improvising is a bug in
       the code, not the doc.
-- [ ] Remove the status warning at the top of the tutorial once it has been walked.
+- [ ] Remove the note at the top of the tutorial once it has been walked.
 - [ ] Check the wiring diagram in `docs/HARDWARE.md` against your actual build.
 
 ---
 
-## 🟡 7. Things I decided that you may disagree with
+## ⚪ 7. CI has never been watched
 
-Not bugs — judgment calls made in your absence. Each is reversible.
+`just ci` passes locally and mirrors `.github/workflows/ci.yml`, but no run of it
+has been read.
 
-- [ ] **No RON config workflow** (plan 07). UUIDs are Rust constants in
-      `shared::uuids`. Reasoning: it was abandoned once, the files it left had
-      already drifted, and your README says moddable means writing Rust. If you
-      want config files, say so — the plan documents what it would take.
-- [ ] **`crates/buttons` → `crates/module-button`** (plan 05, deferred there by
-      plan 02). Matches `modit-<role>-<id>` and scales to `module-nfc`. It is a
-      directory rename; easy to undo now, annoying later.
-- [ ] **Recovery is coarse.** Any module failing ends the round and everything is
-      re-acquired with backoff. Nothing panics or hangs, but one wobbly board
-      interrupts the whole game rather than just itself. Making it per-module is
-      plan 09 — I did not want to build half of that seam and have plan 09 undo it.
-- [ ] **Backoff caps at 30s** (`BACKOFF_MAX`). Fine for a workshop; possibly too
-      slow for an escape game where a module is expected to reappear quickly.
-- [ ] **The advertised name is `modit-button-<id>`**, dropping the chip name that
-      used to be in it. If you ever run mixed ESP32 variants and need to tell them
-      apart, that information is gone from the name.
-
----
-
-## ⚪ 8. CI has never run
-
-No git remote is configured, so `.github/workflows/ci.yml` has never executed.
-`just ci` passes locally and mirrors it.
-
-- [ ] On first push, check the `esp-rs/xtensa-toolchain@v1.5` action version is
-      still current — pinned actions rot.
+- [ ] Check the `esp-rs/xtensa-toolchain@v1.5` action version is still current —
+      pinned actions rot.
 - [ ] Confirm the firmware job's `MODIT_ID: ci` gets through. Without it the build
       fails by design, which is easy to mistake for a broken workflow.
 
@@ -173,8 +150,7 @@ No git remote is configured, so `.github/workflows/ci.yml` has never executed.
 
 ## ⚪ 9. Power draw is unmeasured
 
-[Plan 10](plans/todo/10-power-and-battery.md) is new and independent of everything
-else. It needs one board and a USB power meter, nothing more.
+[Plan 10](todo/10-power-and-battery.md) is independent of everything else. It needs one board and a USB power meter, nothing more.
 
 - [ ] Measure average current: advertising unconnected, connected idle, connected
       with presses.
@@ -183,18 +159,31 @@ else. It needs one board and a USB power meter, nothing more.
       current firmware may already meet it.** Recording that and closing the plan
       is a good outcome, not a cop-out.
 
+---
+
+## ⚪ 9. The landing page has no picture of anything
+
+[Plan 17](doing/17-documentation-per-module-and-web-ready.md) built the
+documentation site and its landing page, and every claim on it is text. A page
+about *physical* game props with no photograph is the weakest part of it, and it
+is the one step of that plan that cannot be done at a desk.
+
+- [ ] Photograph two wired boards. A phone on a table is enough; it does not have
+      to be pretty, it has to be real.
+- [ ] Record ten seconds of a round being played -- light on, hit, next light. A
+      terminal log is not a demonstration of a game.
+- [ ] Drop both into `docs/` and put them at the top of
+      [`docs/index.md`](../docs/index.md).
+- [ ] While the boards are out, check the site's claims against them: the landing
+      page says the button module works, and nothing else is described as working.
+
 ## Where things stand
 
-| | |
-| --- | --- |
-| Branch | `cleanup` — 8 commits, not merged |
-| Tests | 13, all passing, no hardware needed |
-| `just ci` | green locally |
-| Plans done | 01, 02, 03, 05, 07 · 09 and 11 step 1 built and tested |
-| Plans awaiting hardware | 04, 06, 08 (in `plans/doing/`) |
-| Plans left | 09's last piece (per-module recovery) · 11 steps 2-4 (firmware) · 10 — power |
+Which plans are done, which wait on hardware, and what to pick up next is in
+[`README.md`](README.md) — it is not repeated here.
 
-Nothing here is a known bug. It is all "I wrote this and could not watch it work".
+Nothing in this file is a known bug. It is all "I wrote this and could not watch
+it work".
 
 **One part of the project is now genuinely tested**: the scenario layer runs
 under `just simulate` and in 8 automated tests, so game logic no longer depends

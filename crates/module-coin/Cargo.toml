@@ -1,0 +1,58 @@
+# Firmware crate. This is its own workspace root on purpose -- see the comment
+# in the repository root `Cargo.toml` for why it cannot join the host workspace.
+[workspace]
+
+[package]
+edition = "2021"
+name = "module-coin"
+version = "0.1.0"
+
+[[bin]]
+name = "module-coin"
+test = false
+bench = false
+
+[dependencies]
+shared = { path = "../shared" }
+esp-bootloader-esp-idf = "0.1.0"
+esp-hal = { version = "=1.0.0-beta.1", features = ["esp32", "unstable"] }
+bleps = { git = "https://github.com/bjoernQ/bleps", package = "bleps", rev = "a5148d8ae679e021b78f53fd33afb8bb35d0b62e", features = [
+    "async",
+    "macros",
+] }
+critical-section = "1.2.0"
+embedded-io = "0.6.1"
+esp-alloc = "0.8.0"
+esp-wifi = { version = "0.14.1", features = [
+    "ble",
+    "builtin-scheduler",
+    "esp-alloc",
+    "esp32",
+] }
+# panic-handler and exception-handler are NOT default features. Without them
+# nothing installs a handler, which is why this crate used to carry its own
+# silent `loop {}` one. custom-halt lets us reboot after printing the backtrace
+# (see `custom_halt` in src/main.rs) instead of stalling the cores forever.
+esp-backtrace = { version = "0.16", features = [
+    "println",
+    "esp32",
+    "panic-handler",
+    "exception-handler",
+    "custom-halt",
+] }
+esp-println = { version = "0.14", features = ["esp32", "log-04"] }
+cfg-if = "1.0"
+
+[profile.dev]
+# Rust debug is too slow.
+# For debug builds always builds with some optimization
+opt-level = "s"
+
+[profile.release]
+codegen-units = 1        # LLVM can perform better optimizations using a single thread
+debug = 2
+debug-assertions = false
+incremental = false
+lto = 'fat'
+opt-level = 's'
+overflow-checks = false

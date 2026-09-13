@@ -2,15 +2,14 @@
 //!
 //! **Deliberately thin.** Acquisition, connection and the notification streams
 //! are the code in [`crate::ble`], unchanged -- this only translates between it
-//! and [`shared::proto`] messages. That code has not yet been run against real
-//! hardware since the event-loop rewrite (see `CHECKME.md`), so keeping it
-//! untouched means a misbehaving board can be blamed on one change rather than
-//! two.
+//! and [`shared::proto`] messages. That code has not been run against real
+//! hardware since the event-loop rewrite, so keeping it untouched means a
+//! misbehaving board can be blamed on one change rather than two.
 //!
-//! Because it still speaks the *old* wire format -- `&[0]`/`&[1]` for the LED,
-//! `b"Notification"` for a press -- the translation is here rather than on the
-//! board. Plan 11 steps 2-4 move it onto real encoded messages, at which point
-//! this file gets simpler.
+//! The translation is here rather than on the board because `module-button`
+//! speaks a button-specific wire format -- `&[0]`/`&[1]` for the LED,
+//! `b"Notification"` for a press. This file gets simpler when that firmware
+//! speaks [`shared::proto`] like `module-coin` already does.
 
 use std::time::Duration;
 
@@ -62,7 +61,7 @@ impl BleTx {
 impl LinkTx for BleTx {
     async fn send(&self, id: &ModuleId, command: Command) -> anyhow::Result<()> {
         let module = self.find(id)?;
-        // Old wire format; plan 11 step 3 replaces this with proto::encode.
+        // The button firmware's own wire format, not `proto::encode`.
         let payload: &[u8] = match command {
             Command::SetOutput { channel: 0, on } => {
                 if on {
@@ -120,7 +119,7 @@ impl ModuleStream {
                     ));
                 }
                 _ = self.liveness.tick() => {
-                    if !is_connected(&self.peripheral).await {
+                    if !is_connected(&self.id, &self.peripheral).await {
                         warn!("module {} disconnected", self.id);
                         self.lost = true;
                         return Some((self.id.clone(), ModuleEvent::Lost));
@@ -131,17 +130,24 @@ impl ModuleStream {
     }
 }
 
-async fn is_connected(peripheral: &btleplug::platform::Peripheral) -> bool {
+/// Ask a peripheral whether it is still there, giving up after a second.
+///
+/// Takes the module id purely for the log. `peripheral.address()` was used
+/// before, and on macOS that prints `00:00:00:00:00:00` -- CoreBluetooth does
+/// not expose MAC addresses, so btleplug identifies peripherals by UUID and the
+/// address is a placeholder. A line naming the module is the one a person
+/// reading a game log can act on.
+async fn is_connected(id: &ModuleId, peripheral: &btleplug::platform::Peripheral) -> bool {
     // edge case: https://github.com/deviceplug/btleplug/issues/277
     tokio::select! {
         _ = tokio::time::sleep(Duration::from_secs(1)) => {
-            warn!("timed out asking {} whether it is connected", peripheral.address());
+            warn!("timed out asking module {id} whether it is connected");
             false
         }
         result = peripheral.is_connected() => match result {
             Ok(connected) => connected,
             Err(err) => {
-                warn!("could not query connection state of {}: {err}", peripheral.address());
+                warn!("could not query connection state of module {id}: {err}");
                 false
             }
         },
@@ -246,10 +252,10 @@ impl Link for BleLink {
                     lost: false,
                 });
 
-                // The firmware does not send a real Hello yet (plan 11 step 2),
-                // so synthesise what it will say. Keeping the runtime's view
-                // identical either way means the capability checks are exercised
-                // now rather than only after the firmware changes.
+                // The button firmware sends no Hello, so synthesise the one it
+                // would send. Keeping the runtime's view identical either way
+                // means the capability checks are exercised against real boards
+                // and not only in simulation.
                 pending_hellos.push((
                     id.clone(),
                     ModuleEvent::Message(Event::Hello(Descriptor {

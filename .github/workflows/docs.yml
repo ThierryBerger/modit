@@ -1,0 +1,79 @@
+name: Docs
+
+# Publishes the documentation site to GitHub Pages.
+#
+# The site is assembled from the markdown already in the repository -- see
+# `docs/site/stage.py` -- so this workflow has no content of its own and nothing
+# here needs editing when a page is added: staging picks it up, and refuses to
+# build if a page is missing from the table of contents.
+#
+# Pull requests build but do not publish. That is deliberate: a broken staging
+# step (an unlisted page, a heading removed from a file) should fail on the PR
+# rather than on `main`, and the build is a few seconds.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - docs/**
+      - plans/**
+      - README.md
+      - CHECKME.md
+      - book.toml
+      - .github/workflows/docs.yml
+  pull_request:
+    paths:
+      - docs/**
+      - plans/**
+      - README.md
+      - CHECKME.md
+      - book.toml
+      - .github/workflows/docs.yml
+  # So the site can be republished without a documentation change.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time, and never cancel one half-done.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: build the site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: peaceiris/actions-mdbook@v2
+        with:
+          mdbook-version: latest
+
+      - name: Stage the markdown
+        run: python3 docs/site/stage.py
+      - name: Render
+        run: mdbook build
+      - name: Check every link the site makes
+        # A link that works on GitHub can still 404 on the site, because both
+        # staging and mdBook rewrite links. This reads the rendered HTML.
+        run: python3 docs/site/check_links.py
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: target/site/book
+
+  deploy:
+    name: publish to Pages
+    needs: build
+    # Only `main` is published; a pull request stops after the build above.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

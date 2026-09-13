@@ -1,0 +1,39 @@
+# mdBook configuration for the documentation site.
+#
+# `src` is a *staged* tree, not a directory of hand-written files: it is built by
+# `docs/site/stage.py`, which copies the markdown that already lives in `docs/`,
+# `plans/`, `README.md` and `CHECKME.md` and generates the table of contents.
+# Run `just site` rather than `mdbook build` directly -- mdbook has nothing to
+# read until the staging step has run.
+#
+# Why mdBook: the source of truth stays the markdown in the repository, the build
+# is one step in CI, and abandoning it costs this file and one script. There is no
+# second copy of any page to keep in step.
+
+[book]
+title = "Modit"
+description = "Games made of small wireless boxes you set up and take down in minutes."
+authors = ["Thierry Berger"]
+language = "en"
+src = "target/site/src"
+
+[build]
+build-dir = "target/site/book"
+create-missing = false
+
+[output.html]
+default-theme = "rust"
+# A GitHub Pages *project* site is served from /<repo>/, not from the domain root.
+# Without this, the generated 404 page and its links point at the wrong place.
+site-url = "/modit/"
+git-repository-url = "https://github.com/Vrixyz/modit"
+# No `edit-url-template`: mdBook fills `{path}` with the path inside `src`, which
+# here is the disposable staged tree rather than the file anyone should edit. A
+# wrong edit link is worse than none.
+#
+# Tabs for pages that differ per board (`<div class="tabs" data-group="board">`
+# around one heading per board). Plain script and CSS rather than a preprocessor:
+# the markdown stays readable on GitHub, where the div is dropped and every board
+# shows in turn, and CI needs nothing beyond mdbook itself.
+additional-js = ["docs/site/tabs.js"]
+additional-css = ["docs/site/tabs.css"]

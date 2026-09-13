@@ -32,16 +32,34 @@ struct SimModule {
 }
 
 impl SimModule {
-    fn button(inputs: u8, outputs: u8) -> Self {
+    fn new(descriptor: Descriptor) -> Self {
         Self {
-            descriptor: Descriptor {
-                protocol: PROTOCOL_VERSION,
-                role: Role::Button,
-                inputs,
-                outputs,
-            },
-            outputs: vec![false; outputs as usize],
+            descriptor,
+            outputs: vec![false; descriptor.outputs as usize],
         }
+    }
+}
+
+/// A button module's descriptor: `inputs` buttons, `outputs` LEDs.
+pub fn button(inputs: u8, outputs: u8) -> Descriptor {
+    Descriptor {
+        protocol: PROTOCOL_VERSION,
+        role: Role::Button,
+        inputs,
+        outputs,
+    }
+}
+
+/// A coin acceptor's descriptor.
+///
+/// One input, the pulse line, and no outputs. Matches what `crates/module-coin`
+/// reports.
+pub fn coin() -> Descriptor {
+    Descriptor {
+        protocol: PROTOCOL_VERSION,
+        role: Role::Coin,
+        inputs: 1,
+        outputs: 0,
     }
 }
 
@@ -74,6 +92,15 @@ impl SimHandle {
     /// Pretend someone pressed a button.
     pub fn press(&self, id: &ModuleId, channel: u8) {
         self.emit(id, ModuleEvent::Message(Event::Pressed { channel }));
+    }
+
+    /// Pretend someone posted a coin worth `pulses` pulses.
+    ///
+    /// Note there is no matching `outputs` state to check afterwards: a coin is
+    /// an increment, so what a test asserts on is that the scenario *counted*
+    /// it, not that some field changed.
+    pub fn insert_coin(&self, id: &ModuleId, pulses: u8) {
+        self.emit(id, ModuleEvent::Message(Event::Coin { channel: 0, pulses }));
     }
 
     /// Pretend a module lost power or went out of range.
@@ -186,14 +213,20 @@ pub struct SimLink {
 }
 
 impl SimLink {
-    /// `ids` are the module names a scenario expects, e.g. `["a", "b"]`.
+    /// Every module a scenario expects, paired with what it claims to be.
+    ///
+    /// Takes a [`Descriptor`] per module rather than one channel count for all
+    /// of them, because a coin acceptor and a button are not the same shape --
+    /// which is the whole reason the descriptor exists. Use [`button`] and
+    /// [`coin`] to build them.
     ///
     /// Returns the handle alongside the link so a driver or a test can reach the
     /// simulated boards before the first `acquire`.
-    pub fn new(ids: Vec<ModuleId>, inputs: u8, outputs: u8) -> (Self, SimHandle) {
-        let modules: HashMap<_, _> = ids
-            .iter()
-            .map(|id| (id.clone(), SimModule::button(inputs, outputs)))
+    pub fn new(specs: Vec<(ModuleId, Descriptor)>) -> (Self, SimHandle) {
+        let ids: Vec<ModuleId> = specs.iter().map(|(id, _)| id.clone()).collect();
+        let modules: HashMap<_, _> = specs
+            .into_iter()
+            .map(|(id, descriptor)| (id, SimModule::new(descriptor)))
             .collect();
         let handle = SimHandle {
             modules: Arc::new(Mutex::new(modules)),

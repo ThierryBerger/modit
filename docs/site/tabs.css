@@ -1,0 +1,45 @@
+/* Tabs built by tabs.js. Colours come from mdBook's theme variables, so every
+   theme (light, rust, coal, navy, ayu) styles them without a per-theme rule. */
+
+.tabs.tabs-ready {
+  margin-block: 1em;
+}
+
+.tab-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25em;
+  border-bottom: 2px solid var(--table-border-color);
+}
+
+.tab {
+  font: inherit;
+  font-weight: 600;
+  color: var(--fg);
+  background: transparent;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+  padding: 0.5em 1em;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.tab:hover {
+  opacity: 1;
+}
+
+.tab[aria-selected="true"] {
+  color: var(--links);
+  border-bottom-color: var(--links);
+  opacity: 1;
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--links);
+  outline-offset: 2px;
+}
+
+.tab-panel {
+  padding-top: 0.5em;
+}

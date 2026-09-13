@@ -8,7 +8,7 @@
 use std::time::Duration;
 
 use crate::link::ModuleId;
-use crate::link::sim::{SimHandle, SimLink};
+use crate::link::sim::{self, SimHandle, SimLink};
 use crate::runtime;
 use crate::scenarios;
 
@@ -42,8 +42,11 @@ where
     S: FnMut(std::sync::Arc<runtime::Modules>) -> F + Send + 'static,
     F: std::future::Future<Output = anyhow::Result<()>> + Send + 'static,
 {
-    let ids: Vec<ModuleId> = ids.iter().map(|id| ModuleId(id.to_string())).collect();
-    let (link, handle) = SimLink::new(ids, 1, 1);
+    let specs = ids
+        .iter()
+        .map(|id| (ModuleId(id.to_string()), sim::button(1, 1)))
+        .collect();
+    let (link, handle) = SimLink::new(specs);
     let task = tokio::spawn(runtime::run(link.quiet(), scenario));
     (handle, task)
 }
@@ -73,6 +76,95 @@ async fn pressing_the_lit_module_moves_the_light() {
     // ...and something lights up again, ready for the next round.
     eventually(|| sim.only_lit(0).is_some(), "the next module to light").await;
 
+    task.abort();
+}
+
+/// Whack-a-mole on one board is a reaction timer rather than a hunt, but it is
+/// a game and it is what someone who has soldered exactly one module has. The
+/// scenario never assumed two -- only the default bench did, which is what
+/// `--modules` exists to override.
+#[tokio::test(start_paused = true)]
+async fn one_module_is_enough_to_play() {
+    let (sim, task) = start(&["a"]);
+    let only = ModuleId::from("a");
+
+    eventually(|| sim.output(&only, 0) == Some(true), "the module to light").await;
+    sim.press(&only, 0);
+    eventually(
+        || sim.output(&only, 0) == Some(false),
+        "the module to go dark after being pressed",
+    )
+    .await;
+    // And the round comes round again, rather than the scenario ending.
+    eventually(
+        || sim.output(&only, 0) == Some(true),
+        "the module to light for the next round",
+    )
+    .await;
+
+    task.abort();
+}
+
+/// The phantom hit: a light appearing and vanishing instantly with nobody
+/// touching it.
+///
+/// A press queued while the game is between rounds used to be spent on the next
+/// target the moment it lit. One board makes it deterministic -- the next target
+/// is always the same module, so a stale press always lands on it.
+///
+/// Counts rounds from the history rather than polling for the light, for the
+/// reason `arcade::rounds_finished` gives: a phantom round opens and closes
+/// between two polls, so watching the LED can miss it entirely.
+///
+/// The firmware half of this is `EdgeLatch::record_release`, which stops one
+/// press being reported twice in the first place. This is the half that holds
+/// even when a module reports a press nobody made.
+#[tokio::test(start_paused = true)]
+async fn a_press_that_arrives_before_the_light_is_not_a_hit() {
+    use shared::proto::Command;
+
+    /// Rounds that ended: a round finishes by switching its module back off.
+    fn rounds_ended(sim: &SimHandle) -> usize {
+        sim.history()
+            .into_iter()
+            .filter(|(_, command)| matches!(command, Command::SetOutput { on: false, .. }))
+            .count()
+    }
+
+    /// Rounds that started.
+    fn rounds_started(sim: &SimHandle) -> usize {
+        sim.history()
+            .into_iter()
+            .filter(|(_, command)| matches!(command, Command::SetOutput { on: true, .. }))
+            .count()
+    }
+
+    let (sim, task) = start(&["a"]);
+    let only = ModuleId::from("a");
+
+    eventually(|| sim.output(&only, 0) == Some(true), "the module to light").await;
+
+    // One real press, ending one real round.
+    sim.press(&only, 0);
+    eventually(|| rounds_ended(&sim) == 1, "the round to end").await;
+
+    // The duplicate, arriving while the game is between rounds. This is what a
+    // bouncing switch used to send on release, ~100 ms behind the real press.
+    sim.press(&only, 0);
+
+    // Long enough for the next round to light (0.5-2 s) and, if the stale press
+    // were credited, to end and for another to start.
+    tokio::time::sleep(Duration::from_secs(4)).await;
+
+    assert!(
+        rounds_started(&sim) >= 2,
+        "the next round never started, so this test proves nothing"
+    );
+    assert_eq!(
+        rounds_ended(&sim),
+        1,
+        "a round ended with nobody pressing anything: the press that arrived          before the module lit was credited as a hit"
+    );
     task.abort();
 }
 
@@ -355,11 +447,185 @@ mod speedrun {
         task.abort();
 
         // Assert the message itself is useful, by calling it directly.
-        let (mut link, _handle) = SimLink::new(vec![ModuleId::from("a")], 1, 1);
+        let (mut link, _handle) = SimLink::new(vec![(ModuleId::from("a"), sim::button(1, 1))]);
         let err = runtime::run_once(&mut link, scenarios::speedrun)
             .await
             .unwrap_err();
         let rendered = format!("{err:#}");
         assert!(rendered.contains("at least 2 modules"), "{rendered}");
+    }
+}
+
+/// Tests for the coin scenario.
+///
+/// These assert on *command history* rather than on output state wherever
+/// money is involved. A credit is consumed by a round that finishes, and by
+/// then any LED it lit is already off again -- polling for it is exactly the
+/// flakiness the history was added to avoid.
+mod arcade {
+    use super::*;
+    use shared::proto::Command;
+
+    /// A bench with a coin slot and two buttons, matching `Bench::for_scenario`.
+    fn start_arcade() -> (SimHandle, tokio::task::JoinHandle<anyhow::Result<()>>) {
+        let specs = vec![
+            (ModuleId::from("slot"), sim::coin()),
+            (ModuleId::from("a"), sim::button(1, 1)),
+            (ModuleId::from("b"), sim::button(1, 1)),
+        ];
+        let (link, handle) = SimLink::new(specs);
+        let task = tokio::spawn(runtime::run(link.quiet(), scenarios::arcade));
+        (handle, task)
+    }
+
+    /// How many credits have been played to completion.
+    ///
+    /// A round ends by switching its button back off, so counting those is a
+    /// durable measure of progress -- unlike polling for the lit button, which
+    /// the next credit may re-light before the test looks.
+    fn rounds_finished(sim: &SimHandle) -> usize {
+        sim.history()
+            .into_iter()
+            .filter(|(_, command)| {
+                matches!(
+                    command,
+                    Command::SetOutput {
+                        channel: 0,
+                        on: false
+                    }
+                )
+            })
+            .count()
+    }
+
+    /// Whether `arcade` has reset the modules, which it does once, right before
+    /// it starts waiting for a coin.
+    fn in_attract_mode(sim: &SimHandle) -> bool {
+        sim.history()
+            .iter()
+            .any(|(id, command)| id == &ModuleId::from("slot") && *command == Command::Reset)
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn nothing_lights_before_anyone_has_paid() {
+        let (sim, task) = start_arcade();
+        eventually(|| in_attract_mode(&sim), "attract mode").await;
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        assert_eq!(sim.only_lit(0), None, "a button lit before anyone paid");
+        task.abort();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_coin_buys_a_round() {
+        let (sim, task) = start_arcade();
+        eventually(|| in_attract_mode(&sim), "attract mode").await;
+
+        sim.insert_coin(&ModuleId::from("slot"), 1);
+
+        eventually(|| sim.only_lit(0).is_some(), "a button to light up").await;
+        task.abort();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_three_pulse_coin_buys_three_rounds() {
+        let (sim, task) = start_arcade();
+        eventually(|| in_attract_mode(&sim), "attract mode").await;
+
+        sim.insert_coin(&ModuleId::from("slot"), 3);
+
+        // Play every credit through, pressing whatever lights up.
+        //
+        // Progress is measured from the history, not from watching the lit
+        // button go dark: the next credit picks a button at random and may
+        // re-light the same one immediately, so the dark moment is transient and
+        // a test that polls for it races.
+        for credit in 0..3 {
+            eventually(
+                || sim.only_lit(0).is_some(),
+                &format!("credit {} to light a button", credit + 1),
+            )
+            .await;
+            sim.press(&sim.only_lit(0).unwrap(), 0);
+            eventually(
+                || rounds_finished(&sim) > credit,
+                &format!("credit {} to be spent", credit + 1),
+            )
+            .await;
+        }
+        task.abort();
+    }
+
+    /// Integer division means a coin under the price buys nothing. Worth a test
+    /// because the alternative -- rounding up -- is a free game.
+    #[tokio::test(start_paused = true)]
+    async fn a_coin_worth_no_credits_does_not_start_a_game() {
+        let (sim, task) = start_arcade();
+        eventually(|| in_attract_mode(&sim), "attract mode").await;
+
+        sim.insert_coin(&ModuleId::from("slot"), 0);
+
+        // Give the scenario room to do the wrong thing before concluding it did
+        // not.
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        assert_eq!(sim.only_lit(0), None, "a 0-pulse coin started a game");
+        task.abort();
+    }
+
+    /// The check that turns a wiring mistake into a message instead of a hang.
+    #[tokio::test(start_paused = true)]
+    async fn arcade_refuses_a_bench_with_no_coin_acceptor() {
+        let specs = vec![
+            (ModuleId::from("a"), sim::button(1, 1)),
+            (ModuleId::from("b"), sim::button(1, 1)),
+        ];
+        let (mut link, _handle) = SimLink::new(specs);
+        let err = runtime::run_once(&mut link, scenarios::arcade)
+            .await
+            .expect_err("arcade without a coin slot must fail, not wait forever");
+        assert!(
+            format!("{err:#}").contains("coin acceptor"),
+            "should say what is missing: {err:#}"
+        );
+    }
+
+    /// The mirror of the test above: money in, but nothing to play.
+    #[tokio::test(start_paused = true)]
+    async fn arcade_refuses_a_bench_with_nothing_to_play() {
+        let specs = vec![(ModuleId::from("slot"), sim::coin())];
+        let (mut link, _handle) = SimLink::new(specs);
+        let err = runtime::run_once(&mut link, scenarios::arcade)
+            .await
+            .expect_err("a coin slot with no buttons must fail, not take money");
+        assert!(
+            format!("{err:#}").contains("button"),
+            "should say what is missing: {err:#}"
+        );
+    }
+
+    /// The descriptors have to actually arrive, or `require_role` is a no-op and
+    /// `arcade` cannot tell a coin slot from a button. This is the regression
+    /// test for `Modules::descriptors` having been left permanently empty.
+    #[tokio::test(start_paused = true)]
+    async fn every_module_reports_what_it_is_before_the_scenario_starts() {
+        let specs = vec![
+            (ModuleId::from("slot"), sim::coin()),
+            (ModuleId::from("a"), sim::button(1, 1)),
+        ];
+        let (mut link, _handle) = SimLink::new(specs);
+        let _ = runtime::run_once(
+            &mut link,
+            |modules: std::sync::Arc<runtime::Modules>| async move {
+                let slot = modules
+                    .descriptor(&ModuleId::from("slot"))
+                    .expect("the coin slot never introduced itself");
+                assert_eq!(slot.role, shared::proto::Role::Coin);
+                let button = modules
+                    .descriptor(&ModuleId::from("a"))
+                    .expect("the button never introduced itself");
+                assert_eq!(button.role, shared::proto::Role::Button);
+                Ok(())
+            },
+        )
+        .await;
     }
 }

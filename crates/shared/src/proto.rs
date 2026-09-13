@@ -47,6 +47,29 @@ pub const MAX_MESSAGE_LEN: usize = 20;
 pub enum Role {
     /// One or more buttons, one or more LEDs.
     Button,
+    /// A coin acceptor: coins in, pulses out. See [`Event::Coin`].
+    Coin,
+}
+
+impl Role {
+    /// Every role there is.
+    ///
+    /// Exists so a test can check that the capability table in
+    /// `docs/COMPOSING.md` has a row for each one -- a module type nobody
+    /// documented is a module type nobody can design a game around.
+    pub const ALL: &'static [Role] = &[Self::Button, Self::Coin];
+
+    /// How this role is written in prose and in documentation tables.
+    ///
+    /// The match is exhaustive on purpose: adding a variant fails to compile
+    /// here, which is the reminder that [`Self::ALL`] and the capability table
+    /// both need the new row.
+    pub const fn name(&self) -> &'static str {
+        match self {
+            Self::Button => "Button",
+            Self::Coin => "Coin",
+        }
+    }
 }
 
 /// A module's self-description, sent unprompted on connect.
@@ -93,7 +116,21 @@ pub enum Event {
     /// An input went inactive.
     Released { channel: u8 },
     /// A reading from a sensor channel.
+    ///
+    /// A *level*, not an increment: a dropped `Measurement` leaves the brain
+    /// with a stale number, which the next one corrects. Contrast [`Self::Coin`].
     Measurement { channel: u8, value: i32 },
+    /// A coin was accepted, worth `pulses` pulses on the acceptor's scale.
+    ///
+    /// Deliberately **not** a [`Self::Measurement`]. This is an *increment*, so
+    /// a dropped one is money the brain never hears about and cannot recover by
+    /// waiting for the next event -- a difference worth having in the type.
+    ///
+    /// The firmware reports the raw pulse count the acceptor emitted, not a
+    /// currency value. What a pulse is worth depends on how the acceptor was
+    /// programmed and which coins a venue takes, and that is policy: it belongs
+    /// in a scenario, which is the part you are meant to edit.
+    Coin { channel: u8, pulses: u8 },
 }
 
 /// Why a message could not be encoded or decoded.
@@ -179,6 +216,14 @@ mod tests {
                 channel: 1,
                 value: i32::MAX,
             },
+            Event::Coin {
+                channel: 0,
+                pulses: 1,
+            },
+            Event::Coin {
+                channel: u8::MAX,
+                pulses: u8::MAX,
+            },
         ];
         (commands, events)
     }
@@ -254,6 +299,84 @@ mod tests {
             Err(ProtoError::Malformed)
         );
         assert_eq!(decode::<Command>(&[]), Err(ProtoError::Malformed));
+    }
+
+    /// Why adding [`Role::Coin`] and [`Event::Coin`] did **not** bump
+    /// [`PROTOCOL_VERSION`], made executable.
+    ///
+    /// postcard encodes an enum as a varint discriminant followed by the
+    /// payload, so *appending* a variant leaves every earlier one on the same
+    /// number: firmware built against v1 and a brain that knows about coins
+    /// still agree about every message they both have. The version guards
+    /// changes that break that agreement -- reordering these enums, or
+    /// inserting a variant in the middle, would.
+    ///
+    /// If this test fails, the wire format moved under an existing variant.
+    /// Bump `PROTOCOL_VERSION`; do not update the expected bytes.
+    #[test]
+    fn appending_variants_left_the_existing_wire_format_alone() {
+        let mut buf = [0u8; 64];
+        let golden: &[(Event, &[u8])] = &[
+            (
+                Event::Hello(Descriptor {
+                    protocol: 1,
+                    role: Role::Button,
+                    inputs: 1,
+                    outputs: 1,
+                }),
+                &[0, 1, 0, 1, 1],
+            ),
+            (Event::Pressed { channel: 0 }, &[1, 0]),
+            (Event::Released { channel: 3 }, &[2, 3]),
+            (
+                Event::Measurement {
+                    channel: 1,
+                    value: 0,
+                },
+                &[3, 1, 0],
+            ),
+        ];
+        for (event, expected) in golden {
+            assert_eq!(
+                encode(event, &mut buf).unwrap(),
+                *expected,
+                "the encoding of {event:?} changed"
+            );
+        }
+    }
+
+    /// A coin is an increment, so the brain must be able to tell "two separate
+    /// 1-pulse coins" from "one 2-pulse coin". Two identical events in a row
+    /// are meaningful here in a way two identical `Measurement`s are not.
+    #[test]
+    fn two_identical_coins_are_two_coins() {
+        let mut buf = [0u8; 64];
+        let coin = Event::Coin {
+            channel: 0,
+            pulses: 1,
+        };
+        let once = encode(&coin, &mut buf).unwrap().to_vec();
+        // Nothing in the encoding distinguishes them, which is the point: the
+        // transport must not deduplicate, and the brain must count arrivals.
+        let twice = encode(&coin, &mut buf).unwrap().to_vec();
+        assert_eq!(once, twice);
+        assert_eq!(decode::<Event>(&once).unwrap(), coin);
+    }
+
+    /// `ALL` is maintained by hand -- `name` is what makes a new variant fail to
+    /// compile, and this is what catches the other half of the mistake: a
+    /// variant that was named but never added to the list.
+    #[test]
+    fn every_role_is_listed_once() {
+        let mut names: Vec<&str> = Role::ALL.iter().map(Role::name).collect();
+        let listed = names.len();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(
+            names.len(),
+            listed,
+            "Role::ALL lists a role twice: {names:?}"
+        );
     }
 
     #[test]

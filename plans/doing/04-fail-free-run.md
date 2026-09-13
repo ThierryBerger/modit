@@ -74,7 +74,10 @@ Plus the structural fixes that make phase 3 correct:
       background rather than tearing down the whole run.
       **NOT DONE — moved to plan 09. See Notes.**
 - [x] Add exponential backoff to the acquire retry (3 s → 30 s cap) so a genuinely
-      absent module does not spin the radio forever.
+      absent module does not spin the radio forever. **The 30 s cap is unverified
+      against a real game:** it suits a workshop, and may be too slow where a
+      module that was power-cycled is expected back within seconds. Time it on
+      hardware before tuning it.
 
 **Then the concurrency papercuts:**
 

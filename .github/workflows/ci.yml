@@ -30,11 +30,18 @@ jobs:
         run: cargo test --workspace
 
   firmware:
-    name: firmware (module-button)
+    name: firmware (${{ matrix.crate }})
     runs-on: ubuntu-latest
+    strategy:
+      # Do not cancel the coin build because the button build failed, and vice
+      # versa: they are separate workspaces with separate lockfiles, so one
+      # breaking says nothing about the other.
+      fail-fast: false
+      matrix:
+        crate: [module-button, module-coin]
     defaults:
       run:
-        working-directory: crates/module-button
+        working-directory: crates/${{ matrix.crate }}
     env:
       # The id only has to be *a* value to compile; flashing is what makes it
       # real. Without it the build fails by design.
@@ -48,7 +55,7 @@ jobs:
           ldproxy: false
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: crates/module-button
+          workspaces: crates/${{ matrix.crate }}
 
       - name: Format
         run: cargo fmt --all -- --check

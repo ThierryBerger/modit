@@ -1,78 +1,69 @@
 # Hardware
 
-What one modit button module is made of, and how to wire it.
+What a modit module is made of, and how to wire it.
 
-## Bill of materials — per module
+| Module | What | Status |
+| ------ | ---- | ------ |
+| **[module-button](hardware/module-button.md)** | One button, one LED. | Works on real hardware. **Start here** — this is what the [tutorial](TUTORIAL.md) uses. |
+| **[module-coin](hardware/module-coin.md)** | A coin acceptor. **Involves 12 V.** | Being brought up on an **Arduino Uno**, standalone -- it does not talk to the brain yet. ESP32 firmware written, never met a board. |
 
-| Qty | Part | Notes |
-| --- | ---- | ----- |
-| 1 | ESP32 dev board | Plain ESP32 (Xtensa). The firmware targets `xtensa-esp32-none-elf`; an ESP32-C3/C6 is a *different* architecture and will not work unmodified. |
-| 1 | Momentary push button | Any normally-open tactile switch. |
-| 1 | LED | Any colour. |
-| 1 | Resistor, 220 Ω – 1 kΩ | In series with the LED. Not optional — the GPIO will drive far more current than the LED survives. |
-| 1 | USB cable | Must be a *data* cable. A charge-only cable is the single most common "the board does not appear" cause. |
+Each page opens with what the module is *for* before it says what to solder, so
+this table is also the answer to "which one do I build?".
 
-A breadboard and jumper wires for the first one; solder for the ones that go in a box.
+New to this? Go straight to [module-button](hardware/module-button.md) and then
+[the tutorial](TUTORIAL.md). If the question is what a *game* can do with these
+rather than how to build one, that is [composing a game](COMPOSING.md), which
+carries the same three modules as a table of channels a scenario can address.
 
-## Pinout
+## Before you wire anything to 12 V
 
-Defined in [`crates/module-button/src/main.rs`](../crates/module-button/src/main.rs).
+The coin acceptor runs on 12 V. Neither the ESP32 nor the Arduino Uno does.
 
-| Signal | Pin | Configuration |
-| ------ | --- | ------------- |
-| Button | **GPIO33** | Input, internal **pull-down**. Reads high while pressed. |
-| LED    | **GPIO26** | Output, push-pull. High = lit. |
+**Measure every wire on the acceptor against `GND` before you connect it to
+anything.** These units ship with four or five wires whose colours and labels
+vary between clones, and 12 V on a GPIO destroys the pin — silently, and you
+will spend the next hour blaming BLE.
 
-## Wiring
+What you are sorting them into: the pulse output can go to a pin (it is
+open-collector, so the board's pull-up sets its idle level), while `COUNTER`
+drives a 12 V tally counter and stays unconnected.
+[module-coin](hardware/module-coin.md) has the circuit and the reasoning.
 
-```
-     ESP32
-   +---------+
-   |         |
-   |  3V3 o--+------o  o------+
-   |         |     button     |
-   |         |                |
-   | GPIO33 o-----------------+
-   |         |    (internal pull-down holds this low
-   |         |     until the button is pressed)
-   |         |
-   | GPIO26 o------[ 220Ω ]------|>|------+
-   |         |                    LED     |
-   |         |                          -----
-   |  GND  o--------------------------- GND
-   +---------+
-```
+## How this is documented
 
-### Checking it
+Each module page carries a **net table**, a generated schematic, and the
+reasoning. The net table is the source of truth, and a test in `brain` checks it
+against the firmware's pin constants so it cannot silently go stale.
 
-You do not have to eyeball this. The firmware runs a **self-test at boot**, before
-any BLE: it blinks the LED three times and reports whether the button pin reads
-low at rest. Flash the board and watch `just monitor` — step 5 of the
-[tutorial](TUTORIAL.md) walks through what you should see.
-
-### Two things that catch people out
-
-- **The button goes to 3V3, not GND.** The pin is configured with a pull-down, so
-  it idles low and pressing pulls it *up*. Wiring the button to GND gives a pin
-  that is always low and a module that never notifies.
-- **The LED's long leg (anode) faces the resistor / GPIO26.** Backwards, it simply
-  never lights, with no other symptom.
-
-Both of these used to be invisible until the whole system was running, where they
-looked like BLE problems. The self-test catches each of them directly.
+The conventions, the designator scheme, and how to regenerate the drawings are in
+[`hardware/README.md`](hardware/README.md).
 
 ## Choosing different pins
 
-Change `peripherals.GPIO33` / `peripherals.GPIO26` in
-[`crates/module-button/src/main.rs`](../crates/module-button/src/main.rs) and
-update this file. If you move the button to a pin with no internal pull-down, add
-an external one or invert the logic — `InputConfig::default().with_pull(Pull::Down)`
-is doing real work.
+Change the pin in the firmware's `main.rs`, then update that module's net table —
+`cargo test -p brain wiring_tables_match_firmware` will tell you if you forgot.
 
-Avoid GPIO6–11 (connected to the on-board flash) and GPIO34–39 (input-only, so
-they cannot drive an LED).
+Constraints on any ESP32 pin choice:
+
+| Pins | Constraint |
+| ---- | ---------- |
+| `GPIO6`–`GPIO11` | Connected to the on-board flash. **Never use these.** |
+| `GPIO34`–`GPIO39` | Input-only, and have **no internal pull-up or pull-down**. Cannot drive an LED; ideal for a sensor with its own bias resistor. |
+| `GPIO0`, `GPIO2`, `GPIO12`, `GPIO15` | Strapping pins — the level at boot selects the boot mode. Usable, but a pull-up or a pressed button here can stop the board booting. |
+
+If you move an input to a pin with no internal pull, add an external resistor or
+invert the logic. `InputConfig::default().with_pull(Pull::Down)` is doing real
+work on `module-button`.
 
 ## Powering a module away from a laptop
 
-Any 5 V USB source works: a phone charger, a USB battery pack. The module only
+Any 5 V USB source works: a phone charger, a USB battery pack. A module only
 needs power — all communication is over BLE.
+
+The exception is [module-coin](hardware/module-coin.md), which additionally needs
+a 12 V supply sized for the acceptor's ~350 mA solenoid spike. On the Arduino Uno
+that supply powers the Uno too, and **USB stays unplugged whenever the 12 V supply
+is in**, so a wiring mistake cannot reach the computer.
+
+Battery life is a firmware question far more than a radio one, and this firmware
+never sleeps, so a module draws roughly the same current idle as in play.

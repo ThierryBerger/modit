@@ -6,6 +6,7 @@
 
 #![cfg_attr(not(test), no_std)]
 
+pub mod input;
 pub mod proto;
 
 use serde_derive::{Deserialize, Serialize};
@@ -30,6 +31,17 @@ pub mod uuids {
 
     /// Characteristic a client subscribes to for button presses.
     pub const BUTTON_NOTIFY: &str = "917312e0-2354-11eb-9f10-fbc30a62cf30";
+
+    /// Characteristic a client writes a [`crate::proto::Command`] to.
+    ///
+    /// With [`EVENT_NOTIFY`], this is the whole transport for a module that
+    /// speaks the message protocol -- there is no per-role characteristic and
+    /// there never will be again. `module-coin` uses only these two;
+    /// `module-button` still uses [`LED_WRITE`] / [`BUTTON_NOTIFY`].
+    pub const COMMAND_WRITE: &str = "907312e0-2354-11eb-9f10-fbc30a62cf30";
+
+    /// Characteristic a client subscribes to for [`crate::proto::Event`]s.
+    pub const EVENT_NOTIFY: &str = "8f7312e0-2354-11eb-9f10-fbc30a62cf30";
 }
 
 /// Compare two strings in a `const` context.
@@ -91,7 +103,13 @@ mod tests {
 
     #[test]
     fn the_uuids_are_distinct() {
-        let all = [uuids::SERVICE, uuids::LED_WRITE, uuids::BUTTON_NOTIFY];
+        let all = [
+            uuids::SERVICE,
+            uuids::LED_WRITE,
+            uuids::BUTTON_NOTIFY,
+            uuids::COMMAND_WRITE,
+            uuids::EVENT_NOTIFY,
+        ];
         for (i, a) in all.iter().enumerate() {
             for b in &all[..i] {
                 assert_ne!(a, b, "two well-known UUIDs collide");
